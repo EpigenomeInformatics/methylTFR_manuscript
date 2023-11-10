@@ -20,9 +20,9 @@ num.cores <- 30
 
 # Directory where the output should be written to
 analysis.dir <- "/icbb/projects/igunduz/methylTFR_manuscript/results"
-if(!dir.exists(analysis.dir)) dir.create(analysis.dir)
+if (!dir.exists(analysis.dir)) dir.create(analysis.dir)
 analysis.dir <- file.path(analysis.dir, "BLUEPRINT")
-if(!dir.exists(analysis.dir)) dir.create(analysis.dir)
+if (!dir.exists(analysis.dir)) dir.create(analysis.dir)
 
 # Directory where the report files should be written to
 report.dir <- file.path(analysis.dir, "reports")
@@ -43,7 +43,7 @@ rnb.options(
   disk.dump.big.matrices = TRUE,
   strand.specific = FALSE,
   filtering.sex.chromosomes.removal = TRUE,
-  differential.enrichment.lola = FALSE, 
+  differential.enrichment.lola = FALSE,
   identifiers.column = "bedFile",
   differential.comparison.columns = "cellTypeShort" # exclusive cell-types
 )
@@ -58,10 +58,10 @@ rnb.run.qc(rnbset, report.dir)
 rnbset <- rnb.run.preprocessing(rnbset, dir.reports = report.dir)$rnb.set
 
 ## save the object
-save.rnb.set(rnb.set, paste0(report.dir, "/data_import_data/rnb.set_preprocessed"), archive = FALSE)
-
-## Exploratory analysis
-rnb.run.exploratory(rnbset, report.dir)
+save.rnb.set(rnbset, paste0(report.dir, "/data_import_data/rnb.set_preprocessed"), archive = FALSE)
 
 ## Differential methylation
 rnb.run.differential(rnbset, report.dir)
+
+## Exploratory analysis
+rnb.run.exploratory(rnbset, report.dir)
