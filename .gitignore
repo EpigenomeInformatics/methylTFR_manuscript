@@ -21,7 +21,7 @@ data/
 
 # RStudio files
 .Rproj.user/
-
+/src/02_bedToEPP_blueprint.R
 # produced vignettes
 vignettes/*.html
 vignettes/*.pdf
@@ -34,6 +34,7 @@ results/
 *_cache/
 /cache/
 logs/
+archive/
 
 # Temporary files created by R markdown
 *.utf8.md

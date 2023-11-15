@@ -42,6 +42,9 @@ rnb.options(
   differential.comparison.columns = "cellType"
 )
 
+# Multiprocess
+parallel.setup(num.cores)
+
 data.source <- c(bed.dir, sample.annotation, 1)
 result <- rnb.run.import(data.source = data.source, data.type = "bs.bed.dir", dir.reports = report.dir)
 rnbset <- result$rnb.set
