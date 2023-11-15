@@ -14,6 +14,7 @@ suppressPackageStartupMessages({
   library(methylTFR)
   library(methylTFRAnnotationHg38)
   library(logger)
+  library(muLogR)
 })
 
 motifSetList <- c("jaspar2020", "altius")
@@ -41,7 +42,7 @@ for (motifSet in motifSetList) {
     dir.create(out.dir)
   }
   deviations <- run_methyltfr(
-    sample_ann = sample_ann,
+    sample_ann = "samples.tsv",
     sample_dir = sample_dir,
     full_path = FALSE,
     threads = 30,
@@ -49,7 +50,8 @@ for (motifSet in motifSetList) {
     tf_bindsites = tf_bindsites,
     gcfreqs = gcfreqs,
     gc_dist = gc_dist,
-    filetype = "EPP"
+    filetype = "EPP",
+    enhancer=NULL
   )
   saveRDS(deviations, paste0(out.dir, motifSet, "_deviations.RDS"))
 }

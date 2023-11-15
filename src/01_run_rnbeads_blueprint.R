@@ -1,7 +1,7 @@
 #!/usr/bin/env Rscript
 
 #####################################################################
-# 01_run_rneads.R
+# 01_run_rneads_blueprint.R
 # created on 2023-11-09 by Irem Gunduz
 # Run RnBeads vanilla analysis for Blueprint Bcell Methylation Data
 #####################################################################
@@ -45,20 +45,24 @@ rnb.options(
   filtering.sex.chromosomes.removal = TRUE,
   differential.enrichment.lola = FALSE,
   identifiers.column = "bedFile",
-  differential.comparison.columns = "cellTypeShort" # exclusive cell-types
+  differential.comparison.columns = "cellTypeGroup" # not exclusive cell-types
 )
-data.source <- c(bed.dir, sample.annotation, 1)
-result <- rnb.run.import(data.source = data.source, data.type = "bs.bed.dir", dir.reports = report.dir)
-rnbset <- result$rnb.set
+if (!file.exists(paste0(report.dir, "/data_import_data/rnb.set_preprocessed"))) {
+  data.source <- c(bed.dir, sample.annotation, 1)
+  result <- rnb.run.import(data.source = data.source, data.type = "bs.bed.dir", dir.reports = report.dir)
+  rnbset <- result$rnb.set
 
-## Quality Control
-rnb.run.qc(rnbset, report.dir)
+  ## Quality Control
+  rnb.run.qc(rnbset, report.dir)
 
-## Preprocessing
-rnbset <- rnb.run.preprocessing(rnbset, dir.reports = report.dir)$rnb.set
+  ## Preprocessing
+  rnbset <- rnb.run.preprocessing(rnbset, dir.reports = report.dir)$rnb.set
 
-## save the object
-save.rnb.set(rnbset, paste0(report.dir, "/data_import_data/rnb.set_preprocessed"), archive = FALSE)
+  ## save the object
+  save.rnb.set(rnbset, paste0(report.dir, "/data_import_data/rnb.set_preprocessed"), archive = FALSE)
+} else {
+  rnbset <- RnBeads::load.rnb.set(paste0(report.dir, "/data_import_data/rnb.set_preprocessed"))
+}
 
 ## Differential methylation
 rnb.run.differential(rnbset, report.dir)
