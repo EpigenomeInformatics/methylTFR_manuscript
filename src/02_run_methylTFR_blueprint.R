@@ -17,7 +17,7 @@ suppressPackageStartupMessages({
   library(muLogR)
 })
 
-motifSetList <- c("jaspar2020", "altius")
+motifSetList <- c("altius","jaspar2020")
 sample_dir <- "/icbb/projects/igunduz/methylTFR_manuscript/data/BLUEPRINT"
 
 
@@ -42,16 +42,18 @@ for (motifSet in motifSetList) {
     dir.create(out.dir)
   }
   deviations <- run_methyltfr(
-    sample_ann = "samples.tsv",
+    sample_ann = "samples2.tsv",
     sample_dir = sample_dir,
     full_path = FALSE,
-    threads = 30,
-    chunkSize = 10,
+    threads = 32,
+    chunkSize = 15,
     tf_bindsites = tf_bindsites,
     gcfreqs = gcfreqs,
     gc_dist = gc_dist,
     filetype = "EPP",
-    enhancer=NULL
+    enhancer=NULL,
+    ignoreStrand = TRUE
+
   )
   saveRDS(deviations, paste0(out.dir, motifSet, "_deviations.RDS"))
 }

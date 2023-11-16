@@ -18,7 +18,6 @@ bed.dir <- file.path(data.dir, "memoryTcells")
 sample.annotation <- file.path(bed.dir, "samples.tsv")
 num.cores <- 30
 
-
 # Directory where the output should be written to
 analysis.dir <- "/icbb/projects/igunduz/methylTFR_manuscript/results"
 if (!dir.exists(analysis.dir)) dir.create(analysis.dir)

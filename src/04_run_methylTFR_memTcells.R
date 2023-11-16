@@ -1,18 +1,59 @@
+#!/usr/bin/env Rscript
+
+#####################################################################
+# 03_run_methylTFR_memoryTcells.R
+# created on 2023-11-12 by Irem Gunduz
+# Run methylTFR JASPAR2020 and ALTIUS motifs analysis on memoryTcells data
+#####################################################################
+
+set.seed(42)
+logger::log_info("Loading libraries...")
 suppressPackageStartupMessages({
   library(data.table)
   library(dplyr)
   library(methylTFR)
   library(methylTFRAnnotationHg38)
+  library(logger)
+  library(muLogR)
 })
 
-data.dir <- "/icbb/projects/igunduz/methylTFR_manuscript/data/BLUEPRINT/"
-bed_files <- list.files(data.dir, pattern = ".bed")
+motifSetList <- c("altius","jaspar2020")
+sample_dir <- "/icbb/projects/igunduz/methylTFR_manuscript/data/memoryTcells"
 
+for (motifSet in motifSetList) {
+  logger.info(paste0("Running methylTFR for ", motifSet))
+  logger::log_info("Loading the TF binding sites, GC freqs and GC dist")
+  gcfreqs <- getGCfreq(motifSet = motifSet)
+  gc_dist <- getGenomeGC()
+  tf_bindsites <- getTFbindsites(motifSet = motifSet)
 
-sample_dir <- "/icbb/projects/skumar/memoryTcells/bed"
-sample_ann <- "samples.tsv"
-deviations <- run_methyltfr(sample_ann,
-  sample_dir,
-  filetype = "BisSNP",
-  threads = 16
-)
+  logger::log_info("Number of motifs in gcfreqs: ", length(gcfreqs))
+  if (length(gcfreqs) != length(tf_bindsites)) {
+    logger::log_info("Number of motifs in gcfreqs and tf_bindsites are not equal")
+    logger::log_info("Number of motifs in tf_bindsites before filtering: ", length(tf_bindsites))
+    tf_bindsites <- tf_bindsites[names(gcfreqs)]
+    logger::log_info("Number of motifs in tf_bindsites after filtering: ", length(tf_bindsites))
+  }
+  logger::log_info("Number of NAs in gc_dist: ", sum(is.na(gc_dist)))
+
+  out.dir <- paste0("/icbb/projects/igunduz/methylTFR_manuscript/results/memoryTcells/mtfr_", motifSet, "_121123/")
+  if (!dir.exists(out.dir)) {
+    dir.create(out.dir)
+  }
+  deviations <- run_methyltfr(
+    sample_ann = "samples.tsv",
+    sample_dir = sample_dir,
+    full_path = FALSE,
+    threads = 30,
+    chunkSize = 15,
+    tf_bindsites = tf_bindsites,
+    gcfreqs = gcfreqs,
+    gc_dist = gc_dist,
+    filetype = "bissnp",
+    enhancer=NULL,
+    sampleColName = "bedFile",
+    annfile = NULL,
+    ignoreStrand = TRUE
+  )
+  saveRDS(deviations, paste0(out.dir, motifSet, "_deviations.RDS"))
+}
