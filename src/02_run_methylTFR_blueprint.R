@@ -37,12 +37,12 @@ for (motifSet in motifSetList) {
   }
   logger::log_info("Number of NAs in gc_dist: ", sum(is.na(gc_dist)))
 
-  out.dir <- paste0("/icbb/projects/igunduz/methylTFR_manuscript/results/BLUEPRINT/mtfr_", motifSet, "_121123/")
+  out.dir <- paste0("/icbb/projects/igunduz/methylTFR_manuscript/results/BLUEPRINT/mtfr_", motifSet, "_151123/")
   if (!dir.exists(out.dir)) {
     dir.create(out.dir)
   }
   deviations <- run_methyltfr(
-    sample_ann = "samples2.tsv",
+    sample_ann = "samples.tsv",
     sample_dir = sample_dir,
     full_path = FALSE,
     threads = 32,
