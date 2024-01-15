@@ -18,7 +18,7 @@ suppressPackageStartupMessages({
   library(RnBeads)
 })
 
-motifSetList <- c("jaspar2020_distal","altius","jaspar2020")
+motifSetList <- c("cisbpv2","jaspar2020_distal","altius","jaspar2020")
 sample_dir <- "/icbb/projects/igunduz/methylTFR_manuscript/results/memoryTcells/"
 
 out.dir <- paste0(sample_dir,"mtfr_final_221223/")
@@ -35,7 +35,7 @@ if(!file.exists("/icbb/projects/igunduz/annotation/methylTFRAnnotationHg38/inst/
     distal <- readRDS("/icbb/projects/igunduz/annotation/methylTFRAnnotationHg38/inst/extdata/distal_regions.RDS")
 }
 
-for (motifSet in motifSetList) {
+for (motifSet in motifSetList[1]) {
   logger.info(paste0("Running methylTFR for ", motifSet))
   logger::log_info("Loading the TF binding sites, GC freqs and GC dist")
   distal <- if(motifSet != "jaspar2020_distal"){NULL}else{distal}

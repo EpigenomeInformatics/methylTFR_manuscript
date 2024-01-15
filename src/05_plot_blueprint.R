@@ -16,8 +16,9 @@ suppressPackageStartupMessages({
 
 plot_dir <- "/icbb/projects/igunduz/methylTFR_manuscript/Figures"
 if(!dir.exists(plot_dir)) dir.create(plot_dir)
-deviations <- readRDS("/icbb/projects/igunduz/methylTFR_manuscript/results/BLUEPRINT/mtfr_altius_151123/altius_deviations.RDS")
-motifset <- "altius"
+mtfr <- readRDS("/icbb/projects/igunduz/methylTFR_manuscript/results/BLUEPRINT/mtfr_final_221223/cisbpv2_deviations.RDS")
+motifset <- "cisbpv2"
+deviations <- deviations(mtfr)
 
 fn <- file.path(plot_dir, paste0("proximal_devs_",motifset, ".pdf"))
 pdf(fn, width = 15, height = 15, onefile = FALSE)
@@ -62,17 +63,20 @@ dev.off()
 
 
 #Re-group T-cells
-example_deviations <- tdf
-#example_deviations$cell_type  <- ifelse(example_deviations$cell_type %in% c("TCD4", "TCD8"),"Tcell", example_deviations$cell_type)
+#tdf$cell_type  <- ifelse(tdf$cell_type %in% c("TCD4", "TCD8"),"Tcell", tdf$cell_type)
 
 
 # skip cell_type column 
-pca <- prcomp(example_deviations[, -287])
+k <- ifelse(motifset == "altius", 287, 633)
+pca <- prcomp(tdf[, -k])
 fn_pca_ind <- file.path(plot_dir, paste0("bcell_vs_tcell_blueprint_", motifset, ".pdf"))
 pdf(fn_pca_ind)
-autoplot(pca, data = example_deviations,
-         colour = 'cell_type', 
-         main = "PCA - Bcell vs Tcell") 
+autoplot(pca, data = tdf,
+         colour = 'cell_type',  
+         size = 5,
+         main = "PCA - Bcell vs Tcell") +
+         theme_classic() +
+         theme(legend.position = "bottom")
 dev.off()
 
 
@@ -81,8 +85,8 @@ match <- which(groups %in% c("TCD4", "TCD8"))
 groups[match] <- "Tcell"
 groups <- as.factor(groups)
 
-example_deviations <- as.data.frame(deviations)
-diff <- differential_deviation_test(example_deviations, groups = groups,alternative = "two.sided",parametric =FALSE)
+tdf <- as.data.frame(deviations)
+diff <- differential_deviation_test(tdf, groups = groups,alternative = "two.sided",parametric =FALSE)
 
 dim(diff[diff$p_value_adjusted < 0.05, ])
 head(diff[diff$p_value_adjusted < 0.05, ])
