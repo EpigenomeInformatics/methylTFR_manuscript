@@ -3,7 +3,7 @@
 #####################################################################
 # 03_run_methylTFR_blueprint.R
 # created on 2023-11-12 by Irem Gunduz
-# Run methylTFR JASPAR2020 and ALTIUS motifs analysis on BLUEPRINT data
+# Run methylTFR analysis on BLUEPRINT data
 #####################################################################
 
 set.seed(42)
@@ -18,7 +18,7 @@ suppressPackageStartupMessages({
   library(RnBeads)
 })
 
-motifSetList <- c("cisbpv2","jaspar2020_distal","altius","jaspar2020")
+motifSetList <- c("jaspar2020_distal","altius")
 sample_dir <- "/icbb/projects/igunduz/methylTFR_manuscript/results/BLUEPRINT/"
 out.dir <- paste0(sample_dir,"mtfr_final_221223/")
 if (!dir.exists(out.dir)) {dir.create(out.dir)}
@@ -35,7 +35,7 @@ if(!file.exists("/icbb/projects/igunduz/annotation/methylTFRAnnotationHg38/inst/
 logger.info("Loading RnBeads object...")
 rnb_set <- RnBeads::load.rnb.set(paste0(sample_dir,"reports/data_import_data/rnb.set_preprocessed"))
 
-for (motifSet in motifSetList[1]) {
+for (motifSet in motifSetList) {
   logger.info(paste0("Running methylTFR for ", motifSet))
   logger.info("Loading the TF binding sites, GC freqs and GC dist")
   distal <- if(motifSet != "jaspar2020_distal"){NULL}else{distal}

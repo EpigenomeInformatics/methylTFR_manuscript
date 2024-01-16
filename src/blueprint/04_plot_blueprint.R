@@ -1,7 +1,5 @@
 setwd("/icbb/projects/igunduz/methylTFR_manuscript/")
 set.seed(42)
-logger::log_info("Loading libraries...")
-
 suppressPackageStartupMessages({
   library(data.table)
   library(dplyr)
@@ -13,9 +11,75 @@ suppressPackageStartupMessages({
   library(factoextra)
   library(ggfortify)
 })
+source("/icbb/projects/igunduz/methylTFR_manuscript/src/utils.R")
 
 plot_dir <- "/icbb/projects/igunduz/methylTFR_manuscript/Figures"
 if(!dir.exists(plot_dir)) dir.create(plot_dir)
+#Full blueprint methylTFR results
+full_mtfr <- readRDS("/scratch/icbb/mtfr_manuscript/BLUEPRINT/mtfr_final_251223/jaspar2020_distal_deviations.RDS")
+bdevs <- deviationZScores(full_mtfr)
+motifset <- "jaspar2020_distal"
+sannot <- read.delim("/scratch/icbb/mtfr_manuscript//blueprint_data/samples_subset.tsv")[1:5]
+
+tdf <- as.data.frame(t(bdevs))
+rownames(sannot) <- sannot$bedFile
+tdf$cell_type <- sannot[colnames(bdevs), "cellTypeGroup"]
+cell_types <- unique(tdf$cell_type)
+colors <- c("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf", "#1b9e77", "#d95f02", "#7570b3")
+named_colors <- setNames(colors[1:length(cell_types)], cell_types)
+
+# skip cell_type column 
+k <- ifelse(motifset == "altius", 287, 633)
+pca <- prcomp(tdf[, -k])
+fn_pca_ind <- file.path(plot_dir, paste0("pca_blueprint_", motifset, ".pdf"))
+pdf(fn_pca_ind)
+autoplot(pca, data = tdf,
+         colour = 'cell_type',  
+         size = 5,
+         main = "PCA - Blueprint") +
+         theme_classic() +
+         theme(legend.position = "right")+
+         scale_color_manual(values=colors)
+dev.off()
+
+# Plot pie chart for cell types
+# Calculate the percentage of each cell type
+percentages <- round(sample_counts / sum(sample_counts) * 100, 1)
+
+# Create labels
+labels <- paste(names(sample_counts), "\n", percentages, "%", sep = "")
+
+# Create the pie chart
+pdf(file.path(plot_dir, "blueprint_pie.pdf"), width = 15, height = 15, onefile = FALSE)
+pie(sample_counts, main = "Number of samples per cell type", col = colors, labels = labels)
+dev.off()
+
+
+# RnBeads plot for BLUEPRINT
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#####################################################################
 mtfr <- readRDS("/icbb/projects/igunduz/methylTFR_manuscript/results/BLUEPRINT/mtfr_final_221223/cisbpv2_deviations.RDS")
 motifset <- "cisbpv2"
 deviations <- deviations(mtfr)
