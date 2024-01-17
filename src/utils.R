@@ -1,7 +1,4 @@
-rnbeadsDensityScatter <- function(cell,  analysis.dir , region) {
-    # load the diffmeth object
-    diffMeth <- load.rnb.diffmeth(paste0(analysis.dir, "/reports/differential_methylation_data/differential_rnbDiffMeth/"))
-
+rnbeadsDensityScatter <- function(diffMeth, region) {
     # the rank cuts
     rank.cuts.auto <- 0
 
@@ -30,6 +27,5 @@ rnbeadsDensityScatter <- function(cell,  analysis.dir , region) {
         theme_classic() +
         theme(legend.position = "none")
     }
-    ChrAccR:::cleanMem()
   return(pp)
 }

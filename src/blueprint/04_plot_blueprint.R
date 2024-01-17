@@ -10,6 +10,7 @@ suppressPackageStartupMessages({
   library(ComplexHeatmap)
   library(factoextra)
   library(ggfortify)
+  library(RnBeads)
 })
 source("/icbb/projects/igunduz/methylTFR_manuscript/src/utils.R")
 
@@ -56,11 +57,22 @@ dev.off()
 
 
 # RnBeads plot for BLUEPRINT
+analysis.dir <- "/icbb/projects/igunduz/methylTFR_manuscript/results/BLUEPRINT/reports/differential_methylation_data/differential_rnbDiffMeth/"
+diffMeth <- load.rnb.diffmeth(analysis.dir)
+region <- "cpgislands"
+pp <- rnbeadsDensityScatter(diffMeth, "cpgislands")
+ggsave(file.path(plot_dir, "blueprint_rnb_diffmeth.pdf"), pp, width = 15, height = 15, units = "cm")
 
+# logger.info("Loading LOLA database")
+lolaDb_path <- "/icbb/projects/share/annotations/lolaDB/hg38/"
+rnb_set <- load.rnb.set("/icbb/projects/igunduz/methylTFR_manuscript/results/BLUEPRINT/reports/data_import_data/rnb.set_preprocessed")
 
+# Run LOLA
+res <- performLolaEnrichment.diffMeth(rnb_set, diffMeth, lolaDb_path)
+logger.info("Saving results")
+saveRDS(res, paste0(analysis.dir, "lola_results.rds"))
 
-
-
+# Plot LOLA results
 
 
 
