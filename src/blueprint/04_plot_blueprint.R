@@ -55,7 +55,6 @@ pdf(file.path(plot_dir, "blueprint_pie.pdf"), width = 15, height = 15, onefile =
 pie(sample_counts, main = "Number of samples per cell type", col = colors, labels = labels)
 dev.off()
 
-
 # RnBeads plot for BLUEPRINT
 analysis.dir <- "/icbb/projects/igunduz/methylTFR_manuscript/results/BLUEPRINT/reports/differential_methylation_data/differential_rnbDiffMeth/"
 diffMeth <- load.rnb.diffmeth(analysis.dir)
@@ -71,38 +70,20 @@ rnb_set <- load.rnb.set("/icbb/projects/igunduz/methylTFR_manuscript/results/BLU
 res <- performLolaEnrichment.diffMeth(rnb_set, diffMeth, lolaDb_path)
 logger.info("Saving results")
 saveRDS(res, paste0(analysis.dir, "lola_results.rds"))
+#res <- readRDS(paste0(analysis.dir, "lola_results.rds"))
 
 # Plot LOLA results
+lolaRes <- res$region[["Bcell vs. Tcell (based on cellTypeGroup)"]][["cpgislands"]]
+lolaRes <- lolaRes[lolaRes$collection == "TF_motif_clusters",]
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+bp <- lolaBarPlot.hyp(res$lolaDb, lolaRes, scoreCol="oddsRatio", orderCol="maxRnk", pvalCut=0.05,groupByCollection=FALSE)
+ggsave(file.path(plot_dir, "blueprint_lola_hyper.pdf"), bp, width = 15, height = 15, units = "cm")
 
 
 #####################################################################
-mtfr <- readRDS("/icbb/projects/igunduz/methylTFR_manuscript/results/BLUEPRINT/mtfr_final_221223/cisbpv2_deviations.RDS")
-motifset <- "cisbpv2"
+mtfr <- readRDS("/icbb/projects/igunduz/methylTFR_manuscript/results/BLUEPRINT/mtfr_final_221223/altius_deviations.RDS")
+motifset <- "altius"
 deviations <- deviations(mtfr)
-
-fn <- file.path(plot_dir, paste0("proximal_devs_",motifset, ".pdf"))
-pdf(fn, width = 15, height = 15, onefile = FALSE)
-heatmap.2(as.matrix(deviations), col = bluered(100), trace = c("none"),
-          dendrogram = c("column"), cexCol = 0.5, density.info = c("none"),
-          keysize = 1,
-          main = "Proximal motifs Deviations")
-dev.off()
 
 fn <- file.path(plot_dir, paste0("deviation_score_all_",motifset, ".pdf"))
 pdf(fn, width = 15, height = 15, onefile = FALSE)
@@ -120,26 +101,15 @@ get_groupname <- function(x) {
 }
 groups <- unlist(lapply(FUN = get_groupname, X = samples))
 tdf <- as.data.frame(t(deviations))
-pca <- prcomp(tdf, scale. = T)
 tdf$cell_type <- groups
 res.pca <- prcomp(t(deviations))
 
 
-# Save eigenvalues plot
-fn_eig <- file.path(plot_dir, paste0("eigenvalues_plot_", motifset, ".pdf"))
-pdf(fn_eig)
-fviz_eig(res.pca)
-dev.off()
-
 # Save PCA individual plot
 fn_pca_ind <- file.path(plot_dir, paste0("pca_individuals_", motifset, ".pdf"))
 pdf(fn_pca_ind)
-fviz_pca_ind(res.pca, repel = TRUE, title = "PCA on all blueprint samples")
+fviz_pca_ind(res.pca, repel = TRUE, title = "PCA samples")
 dev.off()
-
-
-#Re-group T-cells
-#tdf$cell_type  <- ifelse(tdf$cell_type %in% c("TCD4", "TCD8"),"Tcell", tdf$cell_type)
 
 
 # skip cell_type column 
@@ -166,5 +136,28 @@ diff <- differential_deviation_test(tdf, groups = groups,alternative = "two.side
 
 dim(diff[diff$p_value_adjusted < 0.05, ])
 head(diff[diff$p_value_adjusted < 0.05, ])
-
 write.table(diff, file = paste0(plot_dir,"/",motifset,"_diff_devs.tsv"), sep = "\t", quote = FALSE, row.names = FALSE)
+
+# Plot heatmap for differential deviations
+deviations <- deviationZScores(mtfr)
+deviations <- deviations[ diff[diff$p_value_adjusted < 0.01, ]$motif,]
+
+# Add group information
+ann <- data.frame(groups = groups)
+rownames(ann) <- colnames(deviations)
+group_colors <- c("Bcell" = "#08519c", "Tcell" = "#a50f15")
+ann_heatmap <- HeatmapAnnotation(df = ann, col = list(groups = group_colors))
+dend_cols <- cluster_within_group(deviations, ann$groups)
+colors <- muRtools::colpal.cont(nrow(ann), "cptcity.arendal_temperature")
+
+# Plot heatmap
+fn <- file.path(plot_dir, paste0("deviation_score_diff_",motifset, ".pdf"))
+pdf(fn, width = 15, height = 15, onefile = FALSE)
+Heatmap(as.matrix(deviations), 
+        name = "deviation_score",
+        cluster_rows = TRUE, show_row_names = TRUE, 
+        col = colors,
+        cluster_columns = dend_cols, show_column_names = FALSE,
+        top_annotation = ann_heatmap) 
+dev.off()
+
