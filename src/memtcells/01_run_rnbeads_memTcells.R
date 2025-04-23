@@ -13,7 +13,7 @@ suppressPackageStartupMessages({
 set.seed(12)
 
 # Directory where your data is located
-data.dir <- "/icbb/projects/igunduz/methylTFR_manuscript/data"
+data.dir <- "/icbb/projects/share/datasets/"
 bed.dir <- file.path(data.dir, "memoryTcells")
 sample.annotation <- file.path(bed.dir, "samples.tsv")
 num.cores <- 30
