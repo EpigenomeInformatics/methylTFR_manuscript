@@ -19,45 +19,57 @@ suppressPackageStartupMessages({
   library(stringr)
 })
 
-motifSetList <- c("jaspar2020_distal","altius","jaspar2020")[1]
+motifSetList <- c("jaspar2020_distal", "altius", "jaspar2020")[1]
 sample_dir <- "/icbb/projects/igunduz/methylTFR_manuscript/results/memoryTcells/"
 
-out.dir <- paste0("/icbb/projects/igunduz/mTFR_bias_fix_v3/","memTcells_260624/")
-if (!dir.exists(out.dir)) {dir.create(out.dir)}
+out.dir <- paste0("/icbb/projects/igunduz/mTFR_bias_fix_v3/", "memTcells_260624/")
+if (!dir.exists(out.dir)) {
+  dir.create(out.dir)
+}
 
 if (!file.exists("/icbb/projects/share/annotations/methylTFRAnnotationHg38/inst/extdata/distal_regions.RDS")) {
-    distal <- fread("/icbb/projects/share/annotations/lolaDB/hg38/EnsemblRegBuildBP/regions/regionSet_1.bed", header = FALSE) 
-    distal$V6 <- str_replace(distal$V6, ".", "*")
-    distal <- GRanges(seqnames = distal$V1,
-                  ranges = IRanges(start = distal$V2, end = distal$V3), 
-                  strand = distal$V6)
+  distal <- fread("/icbb/projects/share/annotations/lolaDB/hg38/EnsemblRegBuildBP/regions/regionSet_1.bed", header = FALSE)
+  distal$V6 <- str_replace(distal$V6, ".", "*")
+  distal <- GRanges(
+    seqnames = distal$V1,
+    ranges = IRanges(start = distal$V2, end = distal$V3),
+    strand = distal$V6
+  )
   saveRDS(distal, "/icbb/projects/igunduz/annotation/methylTFRAnnotationHg38/inst/extdata/distal_regions.RDS")
-}else{
+} else {
   distal <- readRDS("/icbb/projects/share/annotations/methylTFRAnnotationHg38/inst/extdata/distal_regions.RDS")
 }
 
 logger::log_info("Out dir: ", out.dir)
 logger::log_info("Loading RnBeads object...")
-rnb_set <- RnBeads::load.rnb.set(paste0(sample_dir,"reports/data_import_data/rnb.set_preprocessed"))
+rnb_set <- RnBeads::load.rnb.set(paste0(sample_dir, "reports/data_import_data/rnb.set_preprocessed"))
 
 for (motifSet in motifSetList[1]) {
   logger.info(paste0("Running methylTFR for ", motifSet))
   logger::log_info("Loading the TF binding sites, GC freqs and GC dist")
-  distal <- if(motifSet != "jaspar2020_distal"){NULL}else{distal}
-  tfset <- if(motifSet == "jaspar2020_distal"){ "jaspar2020"}else{ motifSet}
+  distal <- if (motifSet != "jaspar2020_distal") {
+    NULL
+  } else {
+    distal
+  }
+  tfset <- if (motifSet == "jaspar2020_distal") {
+    "jaspar2020"
+  } else {
+    motifSet
+  }
   gcfreqs <- getGCfreq(motifSet = motifSet)
   gc_dist <- getGenomeGC()
   tf_bindsites <- getTFbindsites(motifSet = tfset)
   logger::log_info("Number of motifs in gcfreqs: ", length(gcfreqs))
 
   deviations <- run_methylTFR_RnBeads(
-    rnb_set= rnb_set,
+    rnb_set = rnb_set,
     threads = 32,
     chunkSize = 15,
     tf_bindsites = tf_bindsites,
     gcfreqs = gcfreqs,
     gc_dist = gc_dist,
-    enhancer=distal,
+    enhancer = distal,
     ignoreStrand = TRUE
   )
   saveRDS(deviations, paste0(out.dir, motifSet, "_deviations.RDS"))
