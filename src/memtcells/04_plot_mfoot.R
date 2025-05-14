@@ -102,7 +102,7 @@ obs_colors <- c(
 
 
 # Generate and save plots for all samples with observed substracted expected
-plot_and_save_difference(msites, plot_dir, obs_colors)
+plot_and_save_difference(msites, save_dir, obs_colors)
 
 #####################################################################
 # Function to generate and save a plot for expected vs observed
