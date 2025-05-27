@@ -21,21 +21,32 @@ logger.info("Saving results")
 saveRDS(res, paste0(analysis.dir, "/reports/differential_methylation_data/differential_rnbDiffMeth/lola_results.rds"))
 logger.completed()
 
-# select the 50 most hypermethylated tiling regions in TCM compared to TN
-lolaRes <- res$region[["TCM vs. non.TCM (based on cellType)"]][["tiling"]]
-lolaRes_filtered <- lolaRes[lolaRes$userSet == "rankCut_100_hyper" & lolaRes$collection == "TF_motifs", ]
+# select the 50 most hyper and hypomethylated promotor regions in TCM compared to TN
+comparisons <- names(res$region)[1:3]
+userSets <- c("rankCut_1000_hyper", "rankCut_1000_hypo")
 
-# plot
 plot_dir <- "/icbb/projects/nitschre/methylTFR/figures"
-fn <- file.path(plot_dir, "LOLAEnrichment_TCM.pdf")
-pdf(fn)
-lolaBarPlot(
-  res$lolaDb,
-  lolaRes_filtered,
-  scoreCol = "oddsRatio",    
-  orderCol = "oddsRatio",         
-  pvalCut = 0.05,                 
-  maxTerms = 50
-)
-dev.off()
+
+for(comparison in comparisons){
+  for (set in userSets){
+    lolaRes <- res$region[[comparison]][["promoters"]]
+    lolaRes_filtered <- lolaRes[lolaRes$userSet == set & lolaRes$collection == "TF_motif_clusters",]
+
+    # Plot
+    sample <- sub(" vs.*", "", comparison)
+    suffix <- if (grepl("hyper", set)) "hyper" else "hypo"
+
+    fn <- file.path(plot_dir, paste0("LOLA", "_", sample, "_", suffix, ".pdf"))
+    p <- lolaBarPlot(
+      res$lolaDb,
+      lolaRes_filtered,
+      scoreCol = "oddsRatio",    
+      orderCol = "oddsRatio",         
+      pvalCut = 0.05,
+      maxTerms = 50
+    )
+    ggsave(fn, p)
+  }
+}
+
 
