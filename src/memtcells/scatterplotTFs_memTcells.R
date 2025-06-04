@@ -55,8 +55,8 @@ zscores$diff_em <- diff_em$p_value_adjusted
 # Find sign TFs for each group
 zscores <- zscores %>%
   mutate(group = case_when(
-    abs(zscores$TN_TEM_diff) >= 0.5 & diff_em < 0.05 ~ "signif",
-    abs(zscores$TN_TCM_diff) >= 0.5 & diff_cm < 0.05 ~ "signif",
+    abs(zscores$TN_TEM_diff) >= 2 & diff_em < 0.035 ~ "signif",
+    abs(zscores$TN_TCM_diff) >= 1.5 & diff_cm < 0.035 ~ "signif",
     TRUE ~ "other"
   ))
 
@@ -64,17 +64,17 @@ zscores <- zscores %>%
 cor <- cor(zscores$TN_TCM_diff, zscores$TN_TEM_diff, method="spearman")
 
 # Scatterplot
-labels <- subset(zscores, group == "signif" & diff_em < 0.05 | diff_cm < 0.05)
+labels <- subset(zscores, group == "signif")
 
-fn_scatterplot <- file.path(plot_dir, "scatterplot.pdf")
-pdf(fn_scatterplot, height =8, width=10)
+fn_scatterplot <- file.path(plot_dir, "scatterplot_003.pdf")
+pdf(fn_scatterplot)
 ggplot(zscores, aes(x=TN_TCM_diff, y=TN_TEM_diff, color=group)) +
-  geom_point(alpha=0.4, size=1) +
+  geom_point(alpha=0.6, size=2) +
   geom_text_repel(
     data = labels,
     aes(label = rownames(labels)),
-    max.overlaps = 150,
-    size = 3,
+    max.overlaps = 100,
+    size = 2,
     segment.color = NA) +
   theme_classic() +
   geom_vline(xintercept = 0, linetype = "dashed") +
