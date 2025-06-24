@@ -2,7 +2,7 @@ library(dplyr)
 library(LOLA)
 source("/icbb/projects/nitschre/methylTFR/scripts/memoryTcells/lola.R")
 
-outputDir <- "/icbb/projects/nitschre/methylTFR/results/memoryTcells/reports/differential_methylation_data/differential_rnbDiffMeth/lola_results.rds"
+outputDir <- "/icbb/projects/nitschre/methylTFR/results/memoryTcells/reports_lola/differential_methylation_data/differential_rnbDiffMeth/lola_results.rds"
 
 # Load the LOLA database
 lolaDb_path <- "/icbb/projects/share/annotations/lolaDB/hg38/"
@@ -12,20 +12,16 @@ lolaDb <- loadRegionDB(lolaDb_path)
 res <- readRDS(outputDir)
 
 # Plot
+comparisons <- names(res$region)[1:3]
+
+for(comparison in comparisons){
 p <- lolaVolcanoPlotC19(cell = NULL,
         lolaDb = lolaDb,
         outputDir = outputDir,
-        reg = "TCM vs. non.TCM (based on cellType)",
+        reg = comparison,
         database = "TF_motif_clusters"
 )
-
-ggsave("/icbb/projects/nitschre/methylTFR/figures/LolaVolcanoPlot.pdf", plot=p$plot)
-
-p <- lolaVolcanoPlotC19(cell = NULL,
-        lolaDb = lolaDb,
-        outputDir = outputDir,
-        reg = "TEM vs. non.TEM (based on cellType)",
-        database = "TF_motif_clusters"
-)
-
-ggsave("/icbb/projects/nitschre/methylTFR/figures/LolaVolcanoPlotTEMvsNonTEM.pdf", plot=p$plot)
+sample <- sub(" \\(.*", "", comparison)
+ggsave(paste0("/icbb/projects/nitschre/methylTFR/figures/memoryTcells/LolaVolcanoPlot", "_", sample), plot=p$plot)
+        
+}
