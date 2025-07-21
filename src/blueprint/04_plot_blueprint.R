@@ -1,4 +1,12 @@
-setwd("/icbb/projects/igunduz/methylTFR_manuscript/")
+#!/usr/bin/env Rscript
+
+#####################################################################
+# 04.plot_blueprint.R
+# created on 21-07-25 by Irem Gunduz
+# Plot blueprint methylTFR results
+#####################################################################
+
+setwd("/icbb/projects/igunduz/irem_github/methylTFR_manuscript")
 set.seed(42)
 suppressPackageStartupMessages({
   library(data.table)
@@ -14,152 +22,94 @@ suppressPackageStartupMessages({
 })
 source("/icbb/projects/igunduz/methylTFR_manuscript/src/utils.R")
 
-plot_dir <- "/icbb/projects/igunduz/methylTFR_manuscript/Figures_020724"
+# Paths
+plot_dir <- "/icbb/projects/igunduz/irem_github/methylTFR_manuscript/Figures/"
 if(!dir.exists(plot_dir)) dir.create(plot_dir)
+rnbeads_path <- "/icbb/projects/igunduz/methylTFR_manuscript/results/BLUEPRINT_080725/reports/data_import_data/rnb.set_preprocessed/"
+sannot <- read.csv("/icbb/projects/igunduz/methylTFR_manuscript/results/BLUEPRINT_080725/reports/data_import_data/annotation.csv", stringsAsFactors = FALSE)
 
-#Full blueprint methylTFR results
-full_mtfr <- readRDS("/icbb/projects/igunduz/mTFR_bias_fix_v3/blueprint_020724/jaspar2020_distal_deviations.RDS")
-#full_mtfr <- readRDS("/scratch/icbb/mtfr_manuscript/BLUEPRINT/mtfr_final_251223/jaspar2020_distal_deviations.RDS")
-bdevs <- deviationZScores(full_mtfr)
-motifset <- "jaspar2020_distal"
-sannot <- read.delim("/scratch/icbb/mtfr_manuscript//blueprint_data/samples_subset.tsv")[1:5]
+# Get the tiling matrix
+rnbset <- RnBeads::load.rnb.set(rnbeads_path)
+tiling_matrix <- meth(rnbset,type="tiling1kb")
 
-tdf <- as.data.frame(t(bdevs))
-rownames(sannot) <- sannot$bedFile
-tdf$cell_type <- sannot[colnames(bdevs), "cellTypeGroup"]
-cell_types <- unique(tdf$cell_type)
-colors <- c("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf", "#1b9e77", "#d95f02", "#7570b3")
-named_colors <- setNames(colors[1:length(cell_types)], cell_types)
+# Ensure consistent character types
+sannot$bedFile <- as.character(sannot$bedFile)
+sample_names <- colnames(tiling_matrix)
 
-# skip cell_type column 
-k <- ifelse(motifset == "altius", 287, 633)
-pca <- prcomp(tdf[, -k])
-fn_pca_ind <- file.path(plot_dir, paste0("pca_blueprint_", motifset, ".pdf"))
-pdf(fn_pca_ind)
-autoplot(pca, data = tdf,
-         colour = 'cell_type',  
-         size = 5,
-         main = "PCA - Blueprint") +
-         theme_classic() +
-         theme(legend.position = "right")+
-         scale_color_manual(values=colors)
-dev.off()
+# Match and extract cellTypeGroup
+cell_types <- sannot$cellTypeGroup[match(sample_names, sannot$bedFile)]
 
-# Plot pie chart for cell types
-# Calculate the percentage of each cell type
-percentages <- round(sample_counts / sum(sample_counts) * 100, 1)
+#tdf <- as.data.frame(t(tiling_matrix))
+#pca_result <- prcomp(tdf, center = FALSE, scale. = FALSE)
+#tdf$groups <- cell_types
 
-# Create labels
-labels <- paste(names(sample_counts), "\n", percentages, "%", sep = "")
+# Remove cancer samples
+keep_samples <- cell_types != "cancer"
+tiling_matrix_filtered <- tiling_matrix[, keep_samples]
+cell_types_filtered <- cell_types[keep_samples]
 
-# Create the pie chart
-pdf(file.path(plot_dir, "blueprint_pie.pdf"), width = 15, height = 15, onefile = FALSE)
-pie(sample_counts, main = "Number of samples per cell type", col = colors, labels = labels)
-dev.off()
+# Start from the filtered objects (after removing cancer)
+valid_samples <- !is.na(cell_types_filtered)
+tiling_matrix_final <- tiling_matrix_filtered[, valid_samples]
+cell_types_final <- cell_types_filtered[valid_samples]
 
-# RnBeads plot for BLUEPRINT
-analysis.dir <- "/icbb/projects/igunduz/methylTFR_manuscript/results/BLUEPRINT/reports/differential_methylation_data/differential_rnbDiffMeth/"
-diffMeth <- load.rnb.diffmeth(analysis.dir)
-region <- "cpgislands"
-pp <- rnbeadsDensityScatter(diffMeth, "cpgislands")
-ggsave(file.path(plot_dir, "blueprint_rnb_diffmeth.pdf"), pp, width = 15, height = 15, units = "cm")
+# PCA
+tdf <- as.data.frame(t(tiling_matrix_final))
+pca_result <- prcomp(tdf, center = FALSE, scale. = FALSE)
+tdf$groups <- group_remap[cell_types_final]
 
-# logger.info("Loading LOLA database")
-lolaDb_path <- "/icbb/projects/share/annotations/lolaDB/hg38/"
-rnb_set <- load.rnb.set("/icbb/projects/igunduz/methylTFR_manuscript/results/BLUEPRINT/reports/data_import_data/rnb.set_preprocessed")
-
-# Run LOLA
-res <- performLolaEnrichment.diffMeth(rnb_set, diffMeth, lolaDb_path)
-logger.info("Saving results")
-saveRDS(res, paste0(analysis.dir, "lola_results.rds"))
-#res <- readRDS(paste0(analysis.dir, "lola_results.rds"))
-
-# Plot LOLA results
-lolaRes <- res$region[["Bcell vs. Tcell (based on cellTypeGroup)"]][["cpgislands"]]
-lolaRes <- lolaRes[lolaRes$collection == "TF_motif_clusters",]
-
-bp <- lolaBarPlot.hyp(res$lolaDb, lolaRes, scoreCol="oddsRatio", orderCol="maxRnk", pvalCut=0.05,groupByCollection=FALSE)
-ggsave(file.path(plot_dir, "blueprint_lola_hyper.pdf"), bp, width = 15, height = 15, units = "cm")
-
-
-#####################################################################
-mtfr <- readRDS("/icbb/projects/igunduz/mTFR_bias_fix_v3/mtfr_240624/jaspar2020_distal_deviations.RDS")
-motifset <- "jaspar2020_distal"
-deviations <- deviationZScores(mtfr)
-
-fn <- file.path(plot_dir, paste0("deviation_score_all_",motifset, ".pdf"))
-pdf(fn, width = 15, height = 15, onefile = FALSE)
-Heatmap(as.matrix(deviations), 
-        name = "deviation_score",
-        column_title = "samples", row_title = "motifs",
-        cluster_rows = FALSE, show_row_names = TRUE  
+cell_type_colors <- c(
+  "B-cells" = "#1f77b4",
+  "DC" = "#ff7f0e",
+  "Erythrocytes" = "#2ca02c",
+  "Granulocytes" = "#d62728",
+  "Megakaryocytes" = "#9467bd",
+  "Mf" = "#8c564b",
+  "Monocytes" = "#e377c2",
+  "NK" = "#7f7f7f",
+  "Other" = "#bcbd22",
+  "Plasma" = "#17becf",
+  "Progenitors" = "#2ca4a2",
+  "T-cells" = "#ff7f0e",
+  "Thymocyte" = "#6a5acd"
 )
-dev.off()
 
+# Apply PCA
+tdf <- as.data.frame(t(tiling_matrix_filtered))
+pca_result <- prcomp(tdf, center = FALSE, scale. = FALSE)
+tdf$groups <- cell_types_filtered
 
-samples <- colnames(deviations)
-get_groupname <- function(x) {
-  return(unlist(strsplit(x, split = "_"))[1])
-}
-groups <- unlist(lapply(FUN = get_groupname, X = samples))
-tdf <- as.data.frame(t(deviations))
-tdf$cell_type <- groups
-res.pca <- prcomp(t(deviations))
+# Remap to cleaner group names
+group_remap <- c(
+  "Bcell" = "B-cells",
+  "DC" = "DC",
+  "eryt" = "Erythrocytes",
+  "gran" = "Granulocytes",
+  "megK" = "Megakaryocytes",
+  "Mf" = "Mf",
+  "mono" = "Monocytes",
+  "NK" = "NK",
+  "other" = "Other",
+  "plasma" = "Plasma",
+  "progenitor" = "Progenitors",
+  "Tcell" = "T-cells",
+  "thymocyte" = "Thymocyte"
+)
 
+# Apply remap
+tdf$groups <- group_remap[tdf$groups]
 
-# Save PCA individual plot
-fn_pca_ind <- file.path(plot_dir, paste0("pca_individuals_", motifset, ".pdf"))
-pdf(fn_pca_ind)
-fviz_pca_ind(res.pca, repel = TRUE, title = "PCA samples")
-dev.off()
-
-
-# skip cell_type column 
-k <- ifelse(motifset == "altius", 287, 633)
-pca <- prcomp(tdf[, -k])
-fn_pca_ind <- file.path(plot_dir, paste0("bcell_vs_tcell_blueprint_", motifset, ".pdf"))
-pdf(fn_pca_ind)
-autoplot(pca, data = tdf,
-         colour = 'cell_type',  
-         size = 5,
-         main = "PCA - Bcell vs Tcell") +
-         theme_classic() +
-         theme(legend.position = "bottom")
-dev.off()
-
-
-# merging TCD4 and TCD8 into single group
-match <- which(groups %in% c("TCD4", "TCD8"))
-groups[match] <- "Tcell"
-groups <- as.factor(groups)
-
-tdf <- as.data.frame(deviations)
-diff <- differential_deviation_test(tdf, groups = groups,alternative = "two.sided",parametric =FALSE)
-
-dim(diff[diff$p_value_adjusted < 0.05, ])
-head(diff[diff$p_value_adjusted < 0.05, ])
-write.table(diff, file = paste0(plot_dir,"/",motifset,"_diff_devs.tsv"), sep = "\t", quote = FALSE, row.names = FALSE)
-
-# Plot heatmap for differential deviations
-deviations <- deviationZScores(mtfr)
-deviations <- deviations[ diff[diff$p_value_adjusted < 0.01, ]$motif,]
-
-# Add group information
-ann <- data.frame(groups = groups)
-rownames(ann) <- colnames(deviations)
-group_colors <- c("Bcell" = "#08519c", "Tcell" = "#a50f15")
-ann_heatmap <- HeatmapAnnotation(df = ann, col = list(groups = group_colors))
-dend_cols <- cluster_within_group(deviations, ann$groups)
-colors <- muRtools::colpal.cont(nrow(ann), "cptcity.arendal_temperature")
-
-# Plot heatmap
-fn <- file.path(plot_dir, paste0("deviation_score_diff_",motifset, ".pdf"))
-pdf(fn, width = 15, height = 15, onefile = FALSE)
-Heatmap(as.matrix(deviations), 
-        name = "deviation_score",
-        cluster_rows = TRUE, show_row_names = TRUE, 
-        col = colors,
-        cluster_columns = dend_cols, show_column_names = FALSE,
-        top_annotation = ann_heatmap) 
+fig_path <- paste0(plot_dir, "PCA_tiling1kb_blueprint.pdf")
+pdf(fig_path, width = 10, height = 10)
+# Plot PCA
+autoplot(pca_result,
+  data = tdf,
+  colour = "groups",
+  main = "PCA",
+  size = 5
+) +
+  theme_classic() +
+  scale_color_manual(values = cell_type_colors) +
+  theme(legend.position = "bottom")
 dev.off()
 

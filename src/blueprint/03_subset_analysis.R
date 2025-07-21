@@ -88,13 +88,23 @@ treport.dir <- paste0(report.dir,"/tcell")
 if(!dir.exists(breport.dir)){dir.create(breport.dir)}
 if(!dir.exists(treport.dir)){dir.create(treport.dir)}
 
+
+# Create tiling regions for 1kb
+tiling1kb <- muRtools::getTilingRegions("hg38", width=1000L, onlyMainChrs=TRUE)%>%
+  data.table::as.data.table() %>%
+  dplyr::select(seqnames, start, end) %>%
+  as.data.frame()
+colnames(tiling1kb) <- c("Chromosome", "Start", "End")
+rnb.set.annotation(type = "tiling1kb", regions = tiling1kb, assembly = "hg38")
+
+
 # Set options
 rnb.options(
   analysis.name = "Blueprint Bcell VS Tcell",
   assembly = "hg38",
   import.table.separator = "\t",
   region.aggregation = "sum",
-  region.types = c("cpgislands"),
+  region.types = c("tiling1kb"),
   import.default.data.type = "data.dir",
   import.bed.style = "EPP",
   analyze.sites = FALSE,

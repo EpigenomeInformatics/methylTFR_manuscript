@@ -14,7 +14,7 @@ suppressPackageStartupMessages({
   library(ggfortify)
 })
 
-plot_dir <- "/icbb/projects/igunduz/methylTFR_manuscript/Figures"
+plot_dir <- "/icbb/projects/igunduz/irem_github/methylTFR_manuscript/Figures"
 if (!dir.exists(plot_dir)) dir.create(plot_dir)
 deviations <- readRDS("//icbb/projects/igunduz/methylTFR_manuscript/results/memoryTcells/mtfr_final_221223/jaspar2020_distal_deviations.RDS")
 motifset <- "jaspar2020_distal"
