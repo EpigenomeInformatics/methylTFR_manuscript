@@ -56,7 +56,7 @@ results <- lapply(genes, function(gene){
     )
 
     # Step 5: Build model matrix and response vector
-    options(na.action='na.pass') # keep NA rows
+    options(na.action='na.pass') # keep NA rowsH
     X <- model.matrix(full_formula, data = df)
     y <- as.numeric(df[[gene_id]])
 
@@ -66,10 +66,20 @@ results <- lapply(genes, function(gene){
     y <- y[valid_rows]
 
     # Step 7: Fit ridge model
-    fit <- cv.glmnet(X, y, alpha = 0)
+    #fit <- cv.glmnet(X, y, alpha = 0)
+
+    # NEW (elastic net with alpha grid search):
+    alpha_grid <- seq(0.1, 0.9, by = 0.1)
+    cv_fits <- lapply(alpha_grid, function(a) cv.glmnet(X, y, alpha = a, family = "gaussian"))
+    cv_errors <- sapply(seq_along(cv_fits), function(i) min(cv_fits[[i]]$cvm))
+    best_idx <- which.min(cv_errors)
+    fit <- cv_fits[[best_idx]]
+    best_alpha <- alpha_grid[best_idx]
+    cat("Best alpha:", best_alpha, "\n")
 
     # Step 8: Extract non-zero coefficients
-    coef_mat <- coef(fit, s = "lambda.min")
+    #coef_mat <- coef(fit, s = "lambda.min")
+    coef_mat <- coef(fit, s = fit$lambda.1se)   # instead of s = "lambda.min"
     selected <- as.matrix(coef_mat)
     selected_nonzero <- selected[selected[, 1] != 0, , drop = FALSE]
 
