@@ -3,6 +3,7 @@ library(dorothea)
 library(viper)
 library(dplyr)
 library(ComplexHeatmap)
+library(viridis)
 
 # Expr matrix
 source("/icbb/projects/nitschre/methylTFR/scripts/memoryTcells/06_rna_expr_matrix.R")
@@ -41,13 +42,16 @@ tf_activity_filtered <- tf_activity[rownames(tf_activity) %in% rownames(mtfr_tfs
 # Change sample names
 colnames(tf_activity_filtered) <- c("Hf03_CM", "Hf03_EM", "Hf03_TN", "Hf04_CM", "Hf04_TN")
 
+# Rowwise zscores of gex data
+tf_activity_filtered <- methylTFR:::computeRowZScore(tf_activity_filtered)
+
 ha <- HeatmapAnnotation(
   celltypes=c("CM","EM", "TN", "CM", "TN"),
   col = list(celltypes = c("TN" = "#C8E0B4", "CM"="#4492C6", "EM"="#43B6C4"))
 )
 
 path <- "/icbb/projects/nitschre/methylTFR/figures/memoryTcells/heatmap_gex_tf_activity.pdf"
-col_fun <- colorRamp2(seq(min(tf_activity_filtered), max(tf_activity_filtered), length.out = 100),
+col_fun <- colorRamp2(seq(-2,2, length.out = 100),
                       viridis(100))
 pdf(path)
 Heatmap(
