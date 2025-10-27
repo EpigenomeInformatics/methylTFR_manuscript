@@ -31,7 +31,7 @@ cell_type_colors <- c(
 
 
 # Paths
-plot_dir <- "/icbb/projects/igunduz/methylTFR/figures/MOFA/"
+plot_dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/figures/echo/mofa_integration/"
 r_objects_dir <- "/icbb/projects/nitschre/methylTFR/r_objects/"
 dir.create(plot_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(r_objects_dir, recursive = TRUE, showWarnings = FALSE)
@@ -323,3 +323,4 @@ ggsave(
   filename = file.path(plot_dir, "BATF_chromVar_vs_mtfr_scatter.pdf"),
   plot = p_data_scatter, width = 6, height = 5
 )
+#####################################################################
