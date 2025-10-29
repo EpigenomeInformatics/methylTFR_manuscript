@@ -70,25 +70,45 @@ rnb.options(
   disk.dump.big.matrices = TRUE,
   strand.specific = FALSE,
   filtering.sex.chromosomes.removal = TRUE,
-  differential.enrichment.lola = TRUE,
-  differential.enrichment.lola.dbs = "/icbb/projects/share/annotations/lolaDB/",
+  differential.enrichment.lola = FALSE, # Running ERROR
+  #differential.enrichment.lola.dbs = "/icbb/projects/share/annotations/lolaDB/",
   identifiers.column = "bedFile",
   differential.comparison.columns = "cellTypeGroup" # not exclusive cell-types
 )
+if(!file.exists(paste0(report.dir, "/data_import_data/rnb.set_preprocessed"))){
 
 # Data Import
 data.source <- c(bed.dir, sample.annotation, 1)
 result <- rnb.run.import(data.source = data.source, data.type = "bs.bed.dir", dir.reports = report.dir)
-rnbset <- result$rnb.set
+rnb.set <- result$rnb.set
 
 # Quality Control
 rnb.run.qc(rnb.set, report.dir)
 
-## Preprocessing
-rnbset <- rnb.run.preprocessing(rnbset, dir.reports = report.dir)$rnb.set
+# Preprocessing
+rnb.set <- rnb.run.preprocessing(rnb.set, dir.reports = report.dir)$rnb.set
 
-## save the object
+# save the object
 save.rnb.set(rnb.set, paste0(report.dir, "/data_import_data/rnb.set_preprocessed"), archive = FALSE)
 
+}else{
+# Load the preprocessed object
+rnb.set <- load.rnb.set(paste0(report.dir, "/data_import_data/rnb.set_preprocessed"))
+}
+if(!file.exists(paste0(report.dir, "/differential_methylation_data/differential_rnbDiffMeth"))){
 # Differential methylation
-rnb.run.differential(rnbset, report.dir)
+rnb.run.differential(rnb.set, report.dir)
+}else{
+# Load differential methylation results
+  diffMeth <- load.rnb.diffmeth(paste0(analysis.dir, "/reports/differential_methylation_data/differential_rnbDiffMeth/"))
+}
+
+# Run LOLA for differential methylation data
+logger.start("Running LOLA")
+lolaDb_path <- "/icbb/projects/share/annotations/lolaDB/lolaSub/hg38/"
+
+# Run LOLA
+res <- performLolaEnrichment.diffMeth(rnb.set, diffMeth, lolaDb_path)
+logger.info("Saving results")
+saveRDS(res, paste0(analysis.dir, "/reports/differential_methylation_data/differential_rnbDiffMeth/lola_results.rds"))
+logger.completed()

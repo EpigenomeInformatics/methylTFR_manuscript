@@ -19,7 +19,7 @@ suppressPackageStartupMessages({
   library(RnBeads)
 })
 source("/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/src/run_mTFR_RnBeads.R", chdir = TRUE)
-motifSetList <- c("jaspar2020_distal")
+motifSetList <- c("jaspar2020","jaspar2020_distal")
 main.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/"
 sample_dir <- paste0(main.dir, "RnBeads_271025/")
 out.dir <- paste0(main.dir, "mTFR_devs_271025/")
