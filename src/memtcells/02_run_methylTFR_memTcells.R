@@ -18,8 +18,8 @@ suppressPackageStartupMessages({
 })
 source("/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/src/run_mTFR_RnBeads.R", chdir = TRUE)
 
-motifSetList <- c("jaspar2020_distal")
-main.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/memoryTcells"
+motifSetList <- c("jaspar2020","jaspar2020_distal")
+main.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/memoryTcells/"
 sample_dir <- paste0(main.dir, "reports/")
 out.dir <- paste0(main.dir, "mTFR_devs_291025/")
 if (!dir.exists(out.dir)) {dir.create(out.dir)}
@@ -35,7 +35,7 @@ if(!file.exists("/icbb/projects/igunduz/annotation/methylTFRAnnotationHg38/inst/
     distal <- readRDS("/icbb/projects/igunduz/annotation/methylTFRAnnotationHg38/inst/extdata/distal_regions.RDS")
 }
 
-for (motifSet in motifSetList[1]) {
+for (motifSet in motifSetList) {
   logger.info(paste0("Running methylTFR for ", motifSet))
   logger::log_info("Loading the TF binding sites, GC freqs and GC dist")
   distal <- if(motifSet != "jaspar2020_distal"){NULL}else{distal}
@@ -47,7 +47,7 @@ for (motifSet in motifSetList[1]) {
 
   logger::log_info("Out dir: ", out.dir)
   logger::log_info("Loading RnBeads object...")
-  rnb_set <- RnBeads::load.rnb.set(paste0(sample_dir,"reports/data_import_data/rnb.set_preprocessed"))
+  rnb_set <- RnBeads::load.rnb.set(paste0(sample_dir,"/data_import_data/rnb.set_preprocessed"))
 
   deviations <- run_methylTFR_RnBeads(
     rnb_set= rnb_set,

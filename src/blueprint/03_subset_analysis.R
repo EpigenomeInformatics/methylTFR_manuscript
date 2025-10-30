@@ -105,7 +105,7 @@ rnb.run.differential(rnb.set, report.dir)
 
 # Run LOLA for differential methylation data
 logger.start("Running LOLA")
-lolaDb_path <- "/icbb/projects/share/annotations/lolaDB/lolaSub/hg38/"
+lolaDb_path <- "/icbb/projects/share/annotations/lolaDB/lolaSubCluster/hg38/"
 
 # Run LOLA
 res <- performLolaEnrichment.diffMeth(rnb.set, diffMeth, lolaDb_path)

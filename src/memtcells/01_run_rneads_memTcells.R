@@ -56,7 +56,7 @@ rnb.options(
   import.bed.style = "BisSNP",
   filtering.sex.chromosomes.removal = TRUE,
   identifiers.column = "bedFile",
-  differential.comparison.columns = "cellType"
+  differential.comparison.columns.all.pairwise = "cellType"#
 )
 
 # Multiprocess
@@ -94,7 +94,7 @@ rnb.run.differential(rnb.set, report.dir)
 
 # Run LOLA for differential methylation data
 logger.start("Running LOLA")
-lolaDb_path <- "/icbb/projects/share/annotations/lolaDB/lolaSub/hg38/"
+lolaDb_path <- "/icbb/projects/share/annotations/lolaDB/lolaSubCluster/hg38/"
 
 # Run LOLA
 res <- performLolaEnrichment.diffMeth(rnb.set, diffMeth, lolaDb_path)
