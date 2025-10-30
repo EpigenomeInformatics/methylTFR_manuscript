@@ -1,0 +1,92 @@
+lolaVolcanoPlot <- function(lolaRes,outputDir,comparison,region,
+database = "TF_motif_clusters",signifCol = "qValue"){
+
+df <- res$region[[comparison]][[region]]
+df <- df[df$userSet %in% c("rankCut_1000_hyper","rankCut_1000_hypo"), ]
+df$condition <- ifelse(df$userSet == "rankCut_1000_hyper","gain","loss")
+  if (signifCol == "qValue") {
+    signifCol <- "qValueLog"
+    df$qValueLog <- -log10(df$qValue)
+    df$differential <- ifelse(df$qValueLog > 1.3, "Differential", "Non-differential")
+  }
+oddsRatioCol <- "log2OR"
+df$log2OR <- log2(df$oddsRatio)
+# Get top 10 motifs for gain
+top_motifs_gain <- df[df$condition == "gain", ]
+top_motifs_gain <- top_motifs_gain[top_motifs_gain$differential == "Differential", ]
+top_motifs_gain <- top_motifs_gain[order(-top_motifs_gain[[signifCol]]), ]
+top_motifs_gain <- head(top_motifs_gain, n = 10)
+# Select the description and conditions column
+top_motifs_gain <- dplyr::select(top_motifs_gain, description, condition,log2OR,qValueLog)
+
+
+# Get top 10 motifs for loss
+top_motifs_loss <- df[df$condition == "loss", ]
+top_motifs_loss <- top_motifs_loss[top_motifs_loss$differential == "Differential", ]
+top_motifs_loss <- top_motifs_loss[order(-top_motifs_loss[[signifCol]]), ]
+top_motifs_loss <- head(top_motifs_loss, n = 10)
+top_motifs_loss <- dplyr::select(top_motifs_loss, description, condition,log2OR,qValueLog)
+top_motifs_loss$log2OR <- -top_motifs_loss$log2OR
+
+top_motifs <- rbind(top_motifs_gain, top_motifs_loss)
+pp <- plotVolcano(df, top_motifs, oddsRatioCol, signifCol)
+
+pdf(file.path(outputDir, paste0("lolaVolcanoPlot_",region,"_",comparison,".pdf")), width = 8, height = 6)
+print(pp)
+dev.off()
+
+}
+
+
+plotVolcano <- function(df, top_motifs, oddsRatioCol, signifCol) {
+  # Ensure the condition column is a factor with the desired order
+  df$condition <- factor(df$condition, levels = c("loss", "gain"))
+  top_motifs$condition <- factor(top_motifs$condition, levels = c("loss", "gain"))
+
+  # Split the data for loss and gain to apply different x-axis limits
+  df_loss <- df %>%
+    filter(condition == "loss") %>%
+    mutate(log2OR = pmin(log2OR, 0)) # Cap at 0
+  df_gain <- df %>%
+    filter(condition == "gain") %>%
+    mutate(log2OR = pmax(log2OR, 0)) # Start at 0
+  df_combined <- bind_rows(df_loss, df_gain)
+
+  top_motifs_loss <- top_motifs %>%
+    filter(condition == "loss") %>%
+    mutate(log2OR = pmin(log2OR, 0))
+  top_motifs_gain <- top_motifs %>%
+    filter(condition == "gain") %>%
+    mutate(log2OR = pmax(log2OR, 0))
+  top_motifs_combined <- bind_rows(top_motifs_loss, top_motifs_gain)
+
+  pp <- ggplot(df_combined) +
+    aes_string(oddsRatioCol, signifCol) +
+    geom_point() +
+    theme_classic() +
+    geom_point(data = df_combined %>% filter(differential == "Non-differential"), color = "black") +
+    ggrepel::geom_text_repel(aes(label = description),
+      data = top_motifs_combined,
+      size = 5,
+      color = ifelse(top_motifs_combined$condition == "gain", "red", "blue"),
+      min.segment.length = 0,
+      seed = 42,
+      box.padding = 1,
+      max.overlaps = Inf,
+      segment.size = 0.5
+    ) +
+    ylab("-log10(Q-Value)") +
+    xlab("log2(Odds-Ratio)") +
+    theme(
+      axis.text = element_text(size = 14),
+      legend.position = "bottom",
+      legend.title = element_blank(),
+      legend.text = element_text(size = 14),
+      strip.text = element_text(size = 12, face = "bold"),
+      strip.background = element_blank()
+    ) +
+    guides(alpha = "none", size = guide_legend(order = 1)) +
+    facet_wrap(~condition, scales = "free_x") # Allow free x-axis scaling per facet
+
+  return(pp)
+}

@@ -79,7 +79,7 @@ result <- rnb.run.import(data.source = data.source, data.type = "bs.bed.dir", di
 rnb.set <- result$rnb.set
 
 # Quality Control
-#rnb.run.qc(rnb.set, report.dir)
+# rnb.run.qc(rnb.set, report.dir)
 
 ## Preprocessing
 rnb.set <- rnb.run.preprocessing(rnb.set, dir.reports = report.dir)$rnb.set

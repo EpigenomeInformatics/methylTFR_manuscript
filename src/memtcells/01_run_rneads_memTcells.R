@@ -56,39 +56,37 @@ rnb.options(
   import.bed.style = "BisSNP",
   filtering.sex.chromosomes.removal = TRUE,
   identifiers.column = "bedFile",
-  differential.comparison.columns.all.pairwise = "cellType"#
+  differential.comparison.columns.all.pairwise = "cellType" #
 )
 
 # Multiprocess
 parallel.setup(num.cores)
 
-if(!file.exists(paste0(report.dir, "/data_import_data/rnb.set_preprocessed"))){
+if (!file.exists(paste0(report.dir, "/data_import_data/rnb.set_preprocessed"))) {
+  # Data Import
+  data.source <- c(bed.dir, sample.annotation, 1)
+  result <- rnb.run.import(data.source = data.source, data.type = "bs.bed.dir", dir.reports = report.dir)
+  rnb.set <- result$rnb.set
 
-# Data Import
-data.source <- c(bed.dir, sample.annotation, 1)
-result <- rnb.run.import(data.source = data.source, data.type = "bs.bed.dir", dir.reports = report.dir)
-rnb.set <- result$rnb.set
+  # Quality Control
+  rnb.run.qc(rnb.set, report.dir)
 
-# Quality Control
-rnb.run.qc(rnb.set, report.dir)
+  # Preprocessing
+  rnb.set <- rnb.run.preprocessing(rnb.set, dir.reports = report.dir)$rnb.set
 
-# Preprocessing
-rnb.set <- rnb.run.preprocessing(rnb.set, dir.reports = report.dir)$rnb.set
-
-# save the object
-save.rnb.set(rnb.set, paste0(report.dir, "/data_import_data/rnb.set_preprocessed"), archive = FALSE)
-
-}else{
-# Load the preprocessed object
-rnb.set <- load.rnb.set(paste0(report.dir, "/data_import_data/rnb.set_preprocessed"))
+  # save the object
+  save.rnb.set(rnb.set, paste0(report.dir, "/data_import_data/rnb.set_preprocessed"), archive = FALSE)
+} else {
+  # Load the preprocessed object
+  rnb.set <- load.rnb.set(paste0(report.dir, "/data_import_data/rnb.set_preprocessed"))
 }
-if(!file.exists(paste0(report.dir, "/differential_methylation_data/differential_rnbDiffMeth"))){
-# Remove TEMRA sample 
-rnb.set <- remove.samples(rnb.set, "51_Hf03_BlTR_Ct_WGBS_S_1.MCSv3.20170714.GRCh38.cpg.filtered.CG.bed")
-# Differential methylation
-rnb.run.differential(rnb.set, report.dir)
-}else{
-# Load differential methylation results
+if (!file.exists(paste0(report.dir, "/differential_methylation_data/differential_rnbDiffMeth"))) {
+  # Remove TEMRA sample
+  rnb.set <- remove.samples(rnb.set, "51_Hf03_BlTR_Ct_WGBS_S_1.MCSv3.20170714.GRCh38.cpg.filtered.CG.bed")
+  # Differential methylation
+  rnb.run.differential(rnb.set, report.dir)
+} else {
+  # Load differential methylation results
   diffMeth <- load.rnb.diffmeth(paste0(analysis.dir, "/reports/differential_methylation_data/differential_rnbDiffMeth/"))
 }
 

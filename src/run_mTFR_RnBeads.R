@@ -127,10 +127,10 @@ run_methylTFR_RnBeads <- function(rnb_set, tf_bindsites, threads = 1,
   # Compute the sd and normalize the deviation
   se <- SummarizedExperiment::SummarizedExperiment(
     assays = list(
-      deviations = obs_dev, z = methylTFR:::computeRowZScore(deviation)
+      deviations = deviation, z = methylTFR:::computeRowZScore(deviation)
     ),
     colData = rnb_set@pheno,
-    rowData = DataFrame(motifs = row.names(obs_dev))
+    rowData = DataFrame(motifs = row.names(deviation))
   )
   return(new("methylTFRdeviations", se))
 }

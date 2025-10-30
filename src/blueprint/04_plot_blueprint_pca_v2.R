@@ -107,7 +107,7 @@ dev.off()
 #####################################################################
 
 # Load RnBeads objects
-rnbeads <- load.rnb.set("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint//RnBeads_271025/reports/data_import_data/rnb.set_preprocessed")
+rnbeads <- load.rnb.set("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/RnBeads_291025/reports/data_import_data/rnb.set_preprocessed")
 
 # Extract methylation matrices
 distal <- meth(rnbeads, type = "distal")
