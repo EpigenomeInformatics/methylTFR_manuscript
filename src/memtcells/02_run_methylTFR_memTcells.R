@@ -18,10 +18,10 @@ suppressPackageStartupMessages({
 })
 source("/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/src/run_mTFR_RnBeads.R", chdir = TRUE)
 
-motifSetList <- c("jaspar2020", "jaspar2020_distal")
+motifSetList <- c("encode","jaspar2020", "jaspar2020_distal")
 main.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/memoryTcells/"
 sample_dir <- paste0(main.dir, "reports/")
-out.dir <- paste0(main.dir, "mTFR_devs_291025/")
+out.dir <- paste0(main.dir, "mTFR_devs_311025/")
 if (!dir.exists(out.dir)) {
   dir.create(out.dir)
 }

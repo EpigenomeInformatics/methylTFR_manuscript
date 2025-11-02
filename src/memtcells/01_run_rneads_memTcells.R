@@ -92,7 +92,7 @@ if (!file.exists(paste0(report.dir, "/differential_methylation_data/differential
 
 # Run LOLA for differential methylation data
 logger.start("Running LOLA")
-lolaDb_path <- "/icbb/projects/share/annotations/lolaDB/lolaSubCluster/hg38/"
+lolaDb_path <- "/icbb/projects/share/annotations/lolaDB/hg38/"
 
 # Run LOLA
 res <- performLolaEnrichment.diffMeth(rnb.set, diffMeth, lolaDb_path)
