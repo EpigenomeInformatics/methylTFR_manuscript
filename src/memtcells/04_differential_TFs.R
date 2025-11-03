@@ -31,15 +31,15 @@ mem_tcell <- "/scratch/icbb/igunduz/methylTFR_manuscript/memTcell"
 if (!dir.exists(mem_tcell)) {
   dir.create(mem_tcell, recursive = TRUE)
 }
-cut_padj <- 0.05
-cut_mean_diff <- 0.5
+cut_padj <- 0.01
+cut_mean_diff <- 0.0
 
 #########################################################################
 # Get differential TFs from methylTFR analysis
 #########################################################################
 
 # Loading deviations scores
-deviations_raw <- readRDS("/scratch/icbb/igunduz/methylTFR_manuscript/memoryTcells/mTFR_devs_291025/jaspar2020_distal_deviations.RDS")
+deviations_raw <- readRDS("/scratch/icbb/igunduz/methylTFR_manuscript/memoryTcells/mTFR_devs_311025/jaspar2020_deviations.RDS")
 deviations <- deviations(deviations_raw)
 
 ### EM vs TN
@@ -166,8 +166,8 @@ ha <- HeatmapAnnotation(
 
 path <- file.path(plot_dir, "viper_tf_activity_memTcells_mtfr_tfs.pdf")
 col_fun <- colorRamp2(
-  seq(-2, 2, length.out = 100),
-  viridis(100)
+  seq(-2, 2, length.out = 70),
+  viridis(70)
 )
 
 # Define sample types for column splitting
@@ -217,7 +217,7 @@ zscores_diffmotifs <- zscores_diffmotifs[, !colnames(zscores_diffmotifs) %in% c(
 # Heatmap annotation
 ha <- HeatmapAnnotation(
   celltypes = c("CM", "EM", "TN", "CM", "EM", "TN"),
-  col = list(celltypes = c("TN" = "#ff0000", "CM" = "#008cff", "EM" = "#0037ff"))
+  col = list(celltypes = c("TN" = "#C8E0B4", "CM" = "#4492C6", "EM" = "#43B6C4"))
 )
 
 # Define sample types for column splitting
@@ -252,7 +252,8 @@ dev.off()
 #########################################################################
 # Mean difference plots for EM vs TN and CM vs TN
 #########################################################################
-cut_mean_diff <- 0.2
+cut_mean_diff <- 0.0
+cut_padj <- 0.05
 deviations <- deviationZScores(deviations_raw)
 deviations_em <- deviations[, grepl("TN|EM", colnames(deviations))]
 deviations_cm <- deviations[, grepl("TN|CM", colnames(deviations))]
@@ -289,6 +290,8 @@ comb_df <- merge(group_means_em, group_means_cm, by = "motifs", suffixes = c("_e
 
 # Add differential identifiers with three groups
 comb_df$isDiff <- dplyr::case_when(
+  abs(comb_df$mean_difference_em) > cut_mean_diff & comb_df$p_value_adjusted_em < cut_padj &
+    abs(comb_df$mean_difference_cm) > cut_mean_diff & comb_df$p_value_adjusted_cm < cut_padj ~ "Differential Both",
   abs(comb_df$mean_difference_em) > cut_mean_diff & comb_df$p_value_adjusted_em < cut_padj ~ "Differential EM",
   abs(comb_df$mean_difference_cm) > cut_mean_diff & comb_df$p_value_adjusted_cm < cut_padj ~ "Differential CM",
   TRUE ~ "Not Differential"
@@ -317,6 +320,7 @@ p <- ggplot(comb_df, aes(x = CM, y = EM, color = isDiff)) +
     values = c(
       "Differential CM" = "#377EB8",
       "Differential EM" = "#E41A1C",
+      "Differential Both" = "#4DAF4A",
       "Not Differential" = "grey70"
     )
   ) +

@@ -10,6 +10,7 @@ suppressPackageStartupMessages({
   library(dplyr)
   library(RnBeads)
   library(grid)
+  library(LOLA)
 })
 set.seed(12)
 
@@ -92,10 +93,11 @@ if (!file.exists(paste0(report.dir, "/differential_methylation_data/differential
 
 # Run LOLA for differential methylation data
 logger.start("Running LOLA")
-lolaDb_path <- "/icbb/projects/share/annotations/lolaDB/hg38/"
+#lolaDb_path <- "/icbb/projects/share/annotations/lolaDB/hg38/"
+lolaDb_path <- "/icbb/projects/share/annotations/lolaDB/lolaTFmotifs/hg38/"
 
 # Run LOLA
 res <- performLolaEnrichment.diffMeth(rnb.set, diffMeth, lolaDb_path)
 logger.info("Saving results")
-saveRDS(res, paste0(analysis.dir, "/reports/differential_methylation_data/differential_rnbDiffMeth/lola_results.rds"))
+saveRDS(res, paste0(analysis.dir, "/reports/differential_methylation_data/differential_rnbDiffMeth/TF_motifs_lola.rds"))
 logger.completed()
