@@ -245,9 +245,41 @@ dev.off()
 # Correlation between methylTFR and VIPER TF activity
 #########################################################################
 
-# TODO: implement 
+# Sort to match the order of methylTFR
+zmat <- tf_activity_final[, colnames(zscores_diffmotifs)]
+mtfr_devs <- zscores_diffmotifs[row_order_vector, ]
+zmat <- zmat[row_order_vector, ]
 
-# TODO: add padj and mean difference values to the correlation heatmap
+# Calculate row-wise correlation
+row_correlation <- sapply(seq_len(nrow(zmat)), function(i) {
+  cor(zmat[i, ], mtfr_devs[i, ]) # ), use = "complete.obs") 
+})
+
+# Convert to a data frame for better readability
+row_correlation_df <- data.frame(
+  RowName = rownames(zmat),
+  Correlation = row_correlation
+)
+
+# Convert row-wise correlation vector to a matrix for heatmap plotting
+correlation_matrix <- as.matrix(row_correlation)
+rownames(correlation_matrix) <- rownames(zmat) # Add row names for better interpretation
+
+# Create the heatmap
+cm <- Heatmap(
+  correlation_matrix,
+  name = "Correlation", # Name for the heatmap legend
+  cluster_rows = FALSE, # Cluster rows
+  show_row_names = TRUE, # Show row names
+  cluster_columns = FALSE, # No clustering for columns since it's a single column
+  # Use the desired color scheme: dark magenta (-1) -> white (0) -> dark olive green (1)
+  col = colorRamp2(c(-1, 0, 1), c("#800040", "white", "#408000")),  # Color scale
+  heatmap_legend_param = list(title = "Row Correlation") # Legend settings
+)
+
+pdf(paste0(plot_dir, "correlation_heatmap.pdf"), width = 5, height = 10)
+draw(cm)
+dev.off()
 
 #########################################################################
 # Mean difference plots for EM vs TN and CM vs TN
@@ -351,6 +383,103 @@ ggsave(plot_path, p, width = 10, height = 10)
 #########################################################################
 # L2FC from LOLA vs mean difference from methylTFR
 #########################################################################
+# Load LOLA results
+res_lola <- readRDS("/scratch/icbb/igunduz/methylTFR_manuscript/memoryTcells/reports/differential_methylation_data/differential_rnbDiffMeth/TF_motifs_lola.rds")
 
-# TODO: implement
-# need the fold changes from LOLA analysis then we need to L2FC vs mean difference per TN/EM and TN/CM
+# Get mTFR difference for TN/TEM
+group_means_em$zdiff <- group_means_em$EM
+group_means_cm$zdiff <- group_means_cm$CM
+em_diff <- group_means_em[, c("motifs", "zdiff","p_value_adjusted")]
+cm_diff <- group_means_cm[, c("motifs", "zdiff","p_value_adjusted")]
+
+# Get the LOLA enrichment results for TN/EM and TN/CM
+em_lola <- res_lola$region[[3]]$tiling
+cm_lola <- res_lola$region[[2]]$tiling
+
+# Subset the userSet based on "rankCut_100_hyper" and, "rankCut_100_hypo"
+em_lola <- em_lola[em_lola$userSet %in% c("rankCut_1000_hyper", "rankCut_1000_hypo"), ]
+cm_lola <- cm_lola[cm_lola$userSet %in% c("rankCut_1000_hyper", "rankCut_1000_hypo"), ]
+
+# Add condition column, if hyper then its "TEM" else "TN"
+em_lola$condition <- ifelse(em_lola$userSet == "rankCut_1000_hyper", "EM", "TN")
+cm_lola$condition <- ifelse(cm_lola$userSet == "rankCut_1000_hyper", "CM", "TN")
+
+# Calculate log2OR
+em_lola$log2OR <- log2(em_lola$oddsRatio)
+cm_lola$log2OR <- log2(cm_lola$oddsRatio)
+em_lola$qValue <- -log10(em_lola$qValue)
+cm_lola$qValue <- -log10(cm_lola$qValue)
+
+# Multiply log2OR with - if condition is TN
+em_lola$log2OR <- ifelse(em_lola$condition == "TN", -em_lola$log2OR, em_lola$log2OR)
+cm_lola$log2OR <- ifelse(cm_lola$condition == "TN", -cm_lola$log2OR, cm_lola$log2OR)
+
+# Re-arrange motifs
+em_lola$motifs <- gsub(".*_", "", em_lola$description)
+cm_lola$motifs <- gsub(".*_", "", cm_lola$description)
+
+em_lola <- em_lola[, c("motifs", "log2OR", "qValue")]
+cm_lola <- cm_lola[, c("motifs", "log2OR", "qValue")]
+
+# Merge with mTFR mean difference
+em_merged <- merge(em_diff, em_lola, by = "motifs")
+em_merged_unique <- em_merged[ave(em_merged$qValue, em_merged$motifs, FUN = rank) == 1, ]
+cm_merged <- merge(cm_diff, cm_lola, by = "motifs")
+cm_merged_unique <- cm_merged[ave(cm_merged$qValue, cm_merged$motifs, FUN = rank) == 1, ]
+
+# Plotting function
+plotlog2OR <- function(df){
+  x_max <- max(abs(df$log2OR), na.rm = TRUE)
+  y_max <- max(abs(df$zdiff), na.rm = TRUE)
+  
+  df <- df %>%
+    mutate(
+      isDiff = case_when(
+        p_value_adjusted < 0.05 & qValue < 0.05 ~ "Differential in both",
+        p_value_adjusted < 0.05 ~ "mTFR differential",
+        qValue < 1.30103 ~ "LOLA differential",
+        TRUE ~ "Not differential"
+      )
+    )
+  
+  df$isDiff <- factor(df$isDiff, levels = c(
+    "Differential in both", 
+    "mTFR differential", 
+    "LOLA differential", 
+    "Not differential"
+  ))
+  
+  p <- ggplot(df, aes(x = log2OR, y = zdiff, color = isDiff)) +
+    geom_point(alpha = 0.7, size = 3) +
+    
+    labs(
+      title = paste0("Motif Enrichment vs. Activity Difference"),
+      x = expression(Log[2]~"Odds Ratio (LOLA Enrichment)"),
+      y = expression("Z-Score Difference (mTFR Activity)"),
+      color = "Differential Status"
+    ) +
+    scale_x_continuous(limits = c(-x_max, x_max)) +
+    scale_y_continuous(limits = c(-y_max, y_max)) +
+    theme_classic(base_size = 14) +
+    scale_color_manual(values = c(
+      "Differential in both" = "red", 
+      "mTFR differential" = "darkgreen", 
+      "LOLA differential" = "dodgerblue", 
+      "Not differential" = "gray50"
+    )) +
+    geom_text_repel(aes(label = motifs), size = 3.5, box.padding = 0.5, max.overlaps = 15) +
+    geom_hline(yintercept = 0, linetype = "dotted", color = "black") +
+    geom_vline(xintercept = 0, linetype = "dotted", color = "black")
+  
+  return(p)
+}
+
+# Plot for EM vs TN
+p_em <- plotlog2OR(em_merged_unique)
+ggsave(file.path(plot_dir, "lola_log2OR_vs_mtfr_meanDiff_em_vs_tn.pdf"), p_em, width = 8, height = 6)
+
+# Plot for CM vs TN
+p_cm <- plotlog2OR(cm_merged_unique)
+ggsave(file.path(plot_dir, "lola_log2OR_vs_mtfr_meanDiff_cm_vs_tn.pdf"), p_cm, width = 8, height = 6)
+
+#########################################################################
