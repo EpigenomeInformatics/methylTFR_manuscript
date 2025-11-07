@@ -22,6 +22,7 @@ set.seed(13)
 
 source("/icbb/projects/nitschre/methylTFR/scripts/other/helpers.R")
 fig_dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/figures/blueprint/"
+table_dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/tables/"
 sannot <- read.csv("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/RnBeads_291025/reports/data_import_data/annotation.csv", stringsAsFactors = FALSE)
 n_pc <- 20
 
@@ -48,7 +49,7 @@ group_remap <- c(
 #####################################################################
 
 # Get mtfr, distal and 1kbtiling matrix
-mtfr <- readRDS("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/mTFR_devs_311025/jaspar2020_distal_deviations.RDS")
+mtfr <- readRDS("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/mTFR_devs_071125/jaspar2020_distal_deviations.RDS")
 mtfr <- deviationZScores(mtfr)
 
 # Load RnBeads objects
@@ -164,7 +165,7 @@ acc_mtfr_pc   <- cv_rf_stratified_splits(t(pcs_mtfr), cell_types, repeats = 100,
 acc_distal_pc <- cv_rf_stratified_splits(t(pcs_distal), cell_types, repeats = 100, test_frac = 0.2,seed=42)
 acc_tiling_pc <- cv_rf_stratified_splits(t(pcs_tiling), cell_types, repeats = 100, test_frac = 0.2,seed=42)
 
-data.frame(
+results <- data.frame(
   Representation = c("mTFR", "Distal", "Tiling1kb"),
   Accuracy = c(acc_mtfr_pc, acc_distal_pc, acc_tiling_pc)
 )
@@ -172,13 +173,14 @@ data.frame(
 #1           mTFR 0.8703333
 #2         Distal 0.9076667
 #3      Tiling1kb 0.8453333
+write.csv(results, file = paste0(table_dir, "rf_classification_accuracy_pc_stratified_splits.csv"), row.names = FALSE)
 
 set.seed(42)
 acc_mtfr_pc <- cv_rf_accuracy_safe(t(pcs_mtfr), cell_types, k = 5, ntree = 500)
 acc_distal_pc <- cv_rf_accuracy_safe(t(pcs_distal), cell_types, k = 5, ntree = 500)
 acc_tiling_pc <- cv_rf_accuracy_safe(t(pcs_tiling), cell_types, k = 5, ntree = 500)
 
-data.frame(
+res <- data.frame(
   Representation = c("mTFR", "Distal", "Tiling1kb"),
   Accuracy = c(acc_mtfr_pc, acc_distal_pc, acc_tiling_pc)
 )
@@ -188,3 +190,4 @@ data.frame(
 #2         Distal 0.9108244
 #3      Tiling1kb 0.8216488
  
+write.csv(res, file = paste0(table_dir, "rf_classification_accuracy_pc_5foldcv.csv"), row.names = FALSE)
