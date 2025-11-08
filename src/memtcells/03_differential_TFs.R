@@ -1,7 +1,7 @@
 #!/usr/bin/env Rscript
 
 #####################################################################
-# 04_differential_TFs.R
+# 03_differential_TFs.R
 # Created on 27-10-25 by IBG
 # Identify differential TFs from methylTFR analysis and
 # TF activity analysis based on gene expression data with dorothea/viper
@@ -31,7 +31,7 @@ mem_tcell <- "/scratch/icbb/igunduz/methylTFR_manuscript/memTcell"
 if (!dir.exists(mem_tcell)) {
   dir.create(mem_tcell, recursive = TRUE)
 }
-cut_padj <- 0.01
+cut_padj <- 0.05
 cut_mean_diff <- 0.0
 
 #########################################################################
@@ -39,7 +39,7 @@ cut_mean_diff <- 0.0
 #########################################################################
 
 # Loading deviations scores
-deviations_raw <- readRDS("/scratch/icbb/igunduz/methylTFR_manuscript/memoryTcells/mTFR_devs_311025/jaspar2020_deviations.RDS")
+deviations_raw <- readRDS("/scratch/icbb/igunduz/methylTFR_manuscript/memoryTcells/mTFR_devs_071125/jaspar2020_distal_deviations.RDS")
 deviations <- deviations(deviations_raw)
 
 ### EM vs TN
@@ -277,14 +277,14 @@ cm <- Heatmap(
   heatmap_legend_param = list(title = "Row Correlation") # Legend settings
 )
 
-pdf(paste0(plot_dir, "correlation_heatmap.pdf"), width = 5, height = 10)
+pdf(paste0(plot_dir, "/correlation_heatmap.pdf"), width = 5, height = 10)
 draw(cm)
 dev.off()
 
 #########################################################################
 # Mean difference plots for EM vs TN and CM vs TN
 #########################################################################
-cut_mean_diff <- 0.0
+cut_mean_diff <- 0.1
 cut_padj <- 0.05
 deviations <- deviationZScores(deviations_raw)
 deviations_em <- deviations[, grepl("TN|EM", colnames(deviations))]
@@ -407,8 +407,8 @@ cm_lola$condition <- ifelse(cm_lola$userSet == "rankCut_1000_hyper", "CM", "TN")
 # Calculate log2OR
 em_lola$log2OR <- log2(em_lola$oddsRatio)
 cm_lola$log2OR <- log2(cm_lola$oddsRatio)
-em_lola$qValue <- -log10(em_lola$qValue)
-cm_lola$qValue <- -log10(cm_lola$qValue)
+#em_lola$qValue <- -log10(em_lola$qValue)
+#cm_lola$qValue <- -log10(cm_lola$qValue)
 
 # Multiply log2OR with - if condition is TN
 em_lola$log2OR <- ifelse(em_lola$condition == "TN", -em_lola$log2OR, em_lola$log2OR)
@@ -437,7 +437,7 @@ plotlog2OR <- function(df){
       isDiff = case_when(
         p_value_adjusted < 0.05 & qValue < 0.05 ~ "Differential in both",
         p_value_adjusted < 0.05 ~ "mTFR differential",
-        qValue < 1.30103 ~ "LOLA differential",
+        qValue < 0.05 ~ "LOLA differential",
         TRUE ~ "Not differential"
       )
     )
