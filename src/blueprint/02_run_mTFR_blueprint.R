@@ -19,7 +19,7 @@ suppressPackageStartupMessages({
   library(RnBeads)
 })
 source("/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/src/run_mTFR_RnBeads.R", chdir = TRUE)
-motifSetList <- c("jaspar2020_distal", "jaspar2020")[1]
+motifSetList <- c("JASPAR2020_distal", "JASPAR2020")[2]
 main.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/"
 sample_dir <- paste0(main.dir, "RnBeads_291025/")
 out.dir <- paste0(main.dir, "mTFR_devs_071125/")
@@ -45,18 +45,18 @@ rnb_set <- RnBeads::load.rnb.set(paste0(sample_dir, "reports/data_import_data/rn
 for (motifSet in motifSetList) {
   logger.info(paste0("Running methylTFR for ", motifSet))
   logger.info("Loading the TF binding sites, GC freqs and GC dist")
-  distal <- if (motifSet != "jaspar2020_distal") {
+  distal <- if (motifSet != "JASPAR2020_distal") {
     NULL
   } else {
     distal
   }
-  tfset <- if (motifSet == "jaspar2020_distal") {
-    "jaspar2020"
+  tfset <- if (motifSet == "JASPAR2020_distal") {
+    "JASPAR2020"
   } else {
     motifSet
   }
-  gcfreqs <- readRDS("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/debug/methylTFRAnnotationHg38/inst/extdata/JASPAR2020_distal_motif_gcfreq.rds")
-  gc_dist <- readRDS("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/debug/methylTFRAnnotationHg38/inst/extdata/genomewide_GC_hg38.rds")
+  gcfreqs <- getGCfreq(motifSet)
+  gc_dist <- getGenomeGC("hg38")  
   tf_bindsites <- getTFbindsites(motifSet = tfset)
 
   logger::log_info("Number of motifs in gcfreqs: ", length(gcfreqs))

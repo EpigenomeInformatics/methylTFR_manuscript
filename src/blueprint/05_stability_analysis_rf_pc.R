@@ -23,6 +23,7 @@ set.seed(13)
 source("/icbb/projects/nitschre/methylTFR/scripts/other/helpers.R")
 fig_dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/figures/blueprint/"
 table_dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/tables/"
+if(!dir.exists(fig_dir)) dir.create(fig_dir, recursive = TRUE)
 sannot <- read.csv("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/RnBeads_291025/reports/data_import_data/annotation.csv", stringsAsFactors = FALSE)
 n_pc <- 20
 

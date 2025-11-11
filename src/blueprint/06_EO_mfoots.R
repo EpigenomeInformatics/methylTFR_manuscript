@@ -25,13 +25,14 @@ sample_dir <- paste0(main.dir, "TB_RnBeads_271025/")
 debug <- paste0(main.dir, "debug/")
 if(!dir.exists(debug)){dir.create(debug)}
 plot_dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/figures/blueprint/"
-plot_dir <- paste0(plot_dir, "EO_mFoot/")
+plot_dir <- paste0(plot_dir, "EO_mFoot_ND/")
 if(!dir.exists(plot_dir)){dir.create(plot_dir)}
+
+if(!file.exists(paste0(debug, "methylation_sites_merged_GRangesList.rds"))){
 
 # Load RnBeads preprocessed data
 rnb_set <- RnBeads::load.rnb.set(paste0(sample_dir, "reports/data_import_data/rnb.set_preprocessed"))
 
-if(!file.exists(paste0(debug, "methylation_sites_merged_GRangesList.rds"))){
 # Merging cell type replicates
 rnbset_merged <- mergeSamples(rnb_set, "cellTypeGroup")
 
@@ -44,14 +45,21 @@ saveRDS(msites, paste0(debug, "methylation_sites_merged_GRangesList.rds"))
 }
 
 # Prepare motif data
-motifSet <- "jaspar2020"
-gcfreqs <- readRDS("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/debug/methylTFRAnnotationHg38/inst/extdata/JASPAR2020_distal_motif_gcfreq.rds")
-tf_bindsites <- readRDS("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/debug/methylTFRAnnotationHg38/inst/extdata/JASPAR2020_tf_bindsites.rds")
-gc_dist <- readRDS("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/debug/methylTFRAnnotationHg38/inst/extdata/genomewide_GC_hg38.rds")
+motifSet <- "JASPAR2020"
+gcfreqs <- getGCfreq(motifSet)
+tf_bindsites <- getTFbindsites(motifSet)
+gc_dist <- getGenomeGC("hg38")
 
 # Define the TFs of interest
-tfs <- c("FOXP2", "FOS", "BATF", "IRF4", "GCM1", "FOSL2")
-tf_bindsites <- tf_bindsites[tfs]
+tfs <-  c(
+  "TFAP2B", "PAX5", "PAX9", "PAX1", "NHLH2", "ASCL1", "NHLH1", "BHLHE22", "FERD3L", "PAX6",
+  "EMX1", "PAX4", "EN1", "LHX1", "ELF4", "ELF2", "ETV5", "ETV6", "ELF5", "SPIC",
+  "SPIB", "SPI1", "EHF", "ELF3", "IKZF1", "TFAP2C", "TFAP2B", "TFAP2A", "TFAP2E", "TFAP2C",
+  "TGIF1", "CREB3L4", "PBX3", "TAL1::TCF3", "MYOG", "ATOH1", "MYF5", "BHLHA15", "ZBTB18", "EBF3",
+  "EBF1", "TFAP4", "NEUROD1", "VSX2", "EGR4", "DPRX", "SOX8", "CUX1", "CUX2", "TEAD3"
+)
+tf_bindsites <- tf_bindsites[names(tf_bindsites) %in% tfs]
+tf_bindsites <- tf_bindsites[sort(names(tf_bindsites))]
 
 if(!file.exists("/icbb/projects/share/annotations/methylTFRAnnotationHg38/inst/extdata/distal_regions.RDS")){
     distal <- fread("/icbb/projects/share/annotations/lolaDB/hg38/EnsemblRegBuildBP/regions/regionSet_1.bed", header = FALSE) 
@@ -63,11 +71,12 @@ if(!file.exists("/icbb/projects/share/annotations/methylTFRAnnotationHg38/inst/e
 }else{
     distal <- readRDS("/icbb/projects/share/annotations/methylTFRAnnotationHg38/inst/extdata/distal_regions.RDS")
 }
+distal <- NULL
 
 # Function to generate and save a plot for all samples
 plot_and_save_difference <- function(samples, save_dir, obs_colors) {
   for (motif in names(tf_bindsites)) {
-    if (!file.exists(file.path(save_dir, paste0("TF_footprint_diff_", motif, ".pdf")))) {
+    if (!file.exists(file.path(save_dir, paste0("TF_footprint_diff_", motif, "2.pdf")))) {
       logger.start(paste("Processing motif", motif, "for B and Tcell samples"))
 
       # Generate plot data and calculate the difference
@@ -111,7 +120,6 @@ plot_and_save_difference <- function(samples, save_dir, obs_colors) {
     }
   }
 }
-
 
 
 # Define the observed colors 

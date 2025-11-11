@@ -50,7 +50,7 @@ gc_dist <- readRDS("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/debug/m
 enhancer <- readRDS("/icbb/projects/share/annotations/methylTFRAnnotationHg38/inst/extdata/distal_regions.RDS")
 
 # Define the TFs of interest
-tfs <- c("JUN","RELB" "FOS","FOXP2", "BATF", "IRF4", "SP1", "FOSL2")
+tfs <- c("JUN","RELB", "FOS","FOXP2", "BATF", "IRF4", "SP1", "FOSL2")
 tf_bindsites <- tf_bindsites[tfs]
 
 # Function to generate and save a plot for all samples

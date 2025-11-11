@@ -18,7 +18,7 @@ suppressPackageStartupMessages({
 })
 source("/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/src/run_mTFR_RnBeads.R", chdir = TRUE)
 
-motifSetList <- c("encode","jaspar2020", "jaspar2020_distal")[3]
+motifSetList <- c("encode","jaspar2020", "jaspar2020_distal")[2]
 main.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/memoryTcells/"
 sample_dir <- paste0(main.dir, "reports/")
 out.dir <- paste0(main.dir, "mTFR_devs_071125/")
@@ -52,8 +52,8 @@ for (motifSet in motifSetList) {
   } else {
     motifSet
   }
-  gcfreqs <- readRDS("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/debug/methylTFRAnnotationHg38/inst/extdata/JASPAR2020_distal_motif_gcfreq.rds")
-  gc_dist <- readRDS("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/debug/methylTFRAnnotationHg38/inst/extdata/genomewide_GC_hg38.rds")
+  gcfreqs <- getGCfreq(motifSet)
+  gc_dist <- getGenomeGC("hg38")  
   tf_bindsites <- getTFbindsites(motifSet = tfset)
   logger::log_info("Number of motifs in gcfreqs: ", length(gcfreqs))
 
