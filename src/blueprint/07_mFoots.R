@@ -46,7 +46,7 @@ saveRDS(msites, paste0(debug, "methylation_sites_merged_GRangesList.rds"))
 
 # Prepare motif data
 motifSet <- "JASPAR2020"
-gcfreqs <- getGCfreq(motifSet)
+gcfreqs <- getGCfreq("JASPAR2020_distal")
 tf_bindsites <- getTFbindsites(motifSet)
 gc_dist <- getGenomeGC("hg38")
 
@@ -70,7 +70,6 @@ if(!file.exists("/icbb/projects/share/annotations/methylTFRAnnotationHg38/inst/e
 }else{
     distal <- readRDS("/icbb/projects/share/annotations/methylTFRAnnotationHg38/inst/extdata/distal_regions.RDS")
 }
-distal <- NULL
  
 # Function to generate and save a plot for all samples
 plot_and_save_difference <- function(samples, save_dir, obs_colors) {
@@ -88,7 +87,7 @@ plot_and_save_difference <- function(samples, save_dir, obs_colors) {
           sample_name = cell_type,
           gc_dist = gc_dist,
           gcfreqs = gcfreqs,
-          enhancer = NULL,
+          enhancer = distal,
           returnPlotData = TRUE
         )
         # Calculate observed/expected methylation

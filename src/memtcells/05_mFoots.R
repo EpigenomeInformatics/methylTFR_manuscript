@@ -48,26 +48,19 @@ msites <- readRDS(paste0(debug,"memoryTcells_msites.RDS"))
 }
 
 # Load annotation files
-motifSet <- "jaspar2020"
-gcfreqs <- readRDS("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/debug/methylTFRAnnotationHg38/inst/extdata/JASPAR2020_distal_motif_gcfreq.rds")
-tf_bindsites <- readRDS("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/debug/methylTFRAnnotationHg38/inst/extdata/JASPAR2020_tf_bindsites.rds")
-gc_dist <- readRDS("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/debug/methylTFRAnnotationHg38/inst/extdata/genomewide_GC_hg38.rds")
-enhancer <- readRDS("/icbb/projects/share/annotations/methylTFRAnnotationHg38/inst/extdata/distal_regions.RDS")
+motifSet <- "JASPAR2020"
+tf_bindsites <- getTFbindsites(motifSet)
+motifSet <- "JASPAR2020_distal"
+gcfreqs <- getGCfreq(motifSet)
+gc_dist <- getGenomeGC("hg38")
+distal <- readRDS("/icbb/projects/share/annotations/methylTFRAnnotationHg38/inst/extdata/distal_regions.RDS")
+distal <- if(motifSet == "JASPAR2020_distal"){distal}else{NULL}
+
 
 # Define the TFs of interest
 tfs <- c("JUN","RELB", "FOS","FOXP2", "BATF", "IRF4", "SP1", "FOSL2")
 tf_bindsites <- tf_bindsites[tfs]
 
-if(!file.exists("/icbb/projects/share/annotations/methylTFRAnnotationHg38/inst/extdata/distal_regions.RDS")){
-    distal <- fread("/icbb/projects/share/annotations/lolaDB/hg38/EnsemblRegBuildBP/regions/regionSet_1.bed", header = FALSE) 
-    distal$V6 <- str_replace(distal$V6, ".", "*")
-    distal <- GRanges(seqnames = distal$V1,
-                  ranges = IRanges(start = distal$V2, end = distal$V3), 
-                  strand = distal$V6)
-    saveRDS(distal, "/icbb/projects/share/annotations/methylTFRAnnotationHg38/inst/extdata/distal_regions.RDS")
-}else{
-    distal <- readRDS("/icbb/projects/share/annotations/methylTFRAnnotationHg38/inst/extdata/distal_regions.RDS")
-}
 
 # Function to generate and save a plot for all samples
 plot_and_save_difference <- function(samples, save_dir, obs_colors) {
