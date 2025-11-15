@@ -4,13 +4,11 @@
 # 03_differential_TFs.R
 # Created on 27-10-25 by IBG
 # Identify differential TFs from methylTFR analysis and
-# TF activity analysis based on gene expression data with dorothea/viper
+# TF activity analysis based on gene expression data
 #####################################################################
 
 # load libraries
 suppressPackageStartupMessages({
-  library(dorothea)
-  library(viper)
   library(dplyr)
   library(ComplexHeatmap)
   library(org.Hs.eg.db)
@@ -30,6 +28,10 @@ if (!dir.exists(plot_dir)) {
 mem_tcell <- "/scratch/icbb/igunduz/methylTFR_manuscript/memTcell"
 if (!dir.exists(mem_tcell)) {
   dir.create(mem_tcell, recursive = TRUE)
+}
+table_dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/tables"
+if (!dir.exists(table_dir)) {
+  dir.create(table_dir, recursive = TRUE)
 }
 cut_padj <- 0.05
 cut_mean_diff <- 0.0
@@ -55,9 +57,12 @@ diff_em <- differential_deviation_test(deviations_em,
   alternative = "two.sided", parametric = TRUE
 )
 saveRDS(diff_em, file = file.path(mem_tcell, "diff_em_jaspar2020.RDS"))
+write.csv(diff_em, file = file.path(table_dir, "diff_em_jaspar2020.csv"), row.names = TRUE)
 
-# Filter for pval < .05 and mean difference > 0.2
-diff_em_filtered <-diff_em[abs(diff_em[,"mean_difference"]) > cut_mean_diff & diff_em[,"p_value_adjusted"] < cut_padj,]
+# Filter for top 50 TFs based on p_value_adjusted
+diff_em_ordered <- diff_em[order(diff_em[, "p_value_adjusted"]), ]
+top_em_tfs <- rownames(diff_em_ordered)[1:min(50, nrow(diff_em_ordered))]
+
 
 ### CM vs TN
 # Subsetting deviations matrix to only naive and CM cells
@@ -72,19 +77,22 @@ diff_cm <- differential_deviation_test(deviations_cm,
   alternative = "two.sided", parametric = TRUE
 )
 saveRDS(diff_cm, file = file.path(mem_tcell, "diff_cm_jaspar2020.RDS"))
+write.csv(diff_cm, file = file.path(table_dir, "diff_cm_jaspar2020.csv"), row.names = TRUE)
 
-# Filter for pval < .05 and mean difference > 0.2
-diff_cm_filtered <-diff_cm[abs(diff_cm[,"mean_difference"]) > cut_mean_diff & diff_cm[,"p_value_adjusted"] < cut_padj,]
+# Filter for top 50 TFs based on p_value_adjusted
+diff_cm_ordered <- diff_cm[order(diff_cm[, "p_value_adjusted"]), ]
+top_cm_tfs <- rownames(diff_cm_ordered)[1:min(50, nrow(diff_cm_ordered))]
 
 # Get Z-scores
 zscores <- deviationZScores(deviations_raw)
 
-# Filter for diff TFs
-zscores_filtered <- zscores[rownames(zscores) %in% c(rownames(diff_em_filtered), rownames(diff_cm_filtered)), ]
+# Filter for diff TFs (top 50 from each comparison)
+all_top_tfs <- unique(c(top_em_tfs, top_cm_tfs))
+zscores_filtered <- zscores[rownames(zscores) %in% all_top_tfs, ]
 saveRDS(zscores_filtered, file = file.path(mem_tcell, "zscores_diffmotifs_jaspar2020.RDS"))
 
 #########################################################################
-# VIPER analysis for TF activity from gene expression data
+# GEX analysis for TF activity from gene expression data
 #########################################################################
 
 # Get the RNA-seq data files
@@ -137,68 +145,58 @@ expr <- as.data.frame(expr_matrix)
 rownames(expr) <- make.unique(expr$gene_short_name)
 expr <- expr[, !colnames(expr) %in% c("gene_id_clean", "gene_id", "gene_short_name", "tracking_id")]
 
-# 1) Get human regulons (A–C for higher confidence)
-data(dorothea_hs, package = "dorothea")
-reg <- dorothea_hs %>% filter(confidence %in% c("A", "B", "C"))
-
-# 2) Build regulon object for VIPER
-regulon <- dorothea::df2regulon(reg)
-
-# 3) Single-sample TF activity (aREA)
-# expr must be a matrix with gene symbols as rownames
-tf_activity <- viper(as.matrix(expr), regulon, method = "scale", minsize = 5, eset.filter = FALSE)
-saveRDS(tf_activity, file = file.path(mem_tcell, "viper_tf_activity_memTcells.RDS"))
-
 ### Heatmap containing differential Tfs from mtfr
 mtfr_tfs <- readRDS(file.path(mem_tcell, "zscores_diffmotifs_jaspar2020.RDS"))
-tf_activity_filtered <- tf_activity[rownames(tf_activity) %in% rownames(mtfr_tfs), ]
+tf_expression_filtered <- expr[rownames(expr) %in% rownames(mtfr_tfs), ]
 
-# Change sample names
-colnames(tf_activity_filtered) <- c("Hf03_CM", "Hf03_EM", "Hf03_TN", "Hf04_CM", "Hf04_EM", "Hf04_TN")
+# Clean sample names
+original_cols <- colnames(tf_expression_filtered)
+clean_cols <- sub("\\..*", "", original_cols)
+clean_cols <- sub("^\\d+_", "", clean_cols)
+clean_cols <- sub("_BlEM", "_EM", clean_cols)
+clean_cols <- sub("_BlCM", "_CM", clean_cols)
+clean_cols <- sub("_BlTN", "_TN", clean_cols)
+clean_cols <- sub("_Ct$", "", clean_cols)
+cat("DEBUG: Column Name Mapping\n")
+print(data.frame(Original = original_cols, Cleaned = clean_cols))
+colnames(tf_expression_filtered) <- clean_cols
 
 # Rowwise zscores of gex data
-tf_activity_filtered <- methylTFR:::computeRowZScore(tf_activity_filtered)
+tf_expression_zscore <- methylTFR:::computeRowZScore(as.matrix(tf_expression_filtered))
+
+sample_types <- sub("^.*_", "", colnames(tf_expression_zscore))
+sample_types_factor <- factor(sample_types, levels = c("CM", "EM", "TN"))
 
 ha <- HeatmapAnnotation(
-  celltypes = c("CM", "EM", "TN", "CM", "EM", "TN"),
+  celltypes = sample_types,
   col = list(celltypes = c("TN" = "#C8E0B4", "CM" = "#4492C6", "EM" = "#43B6C4"))
 )
 
-path <- file.path(plot_dir, "viper_tf_activity_memTcells_mtfr_tfs.pdf")
+path <- file.path(plot_dir, "gex_tf_expression_memTcells_mtfr_tfs.pdf")
 col_fun <- colorRamp2(
   seq(-2, 2, length.out = 70),
   viridis(70)
 )
 
-# Define sample types for column splitting
-sample_types <- sub("^.*_", "", colnames(tf_activity_filtered))
-sample_types <- factor(sample_types, levels = c("CM", "EM", "TN"))
-
-hm <- Heatmap(
-  tf_activity_filtered,
+hm_gex <- Heatmap(
+  tf_expression_zscore,
   column_names_gp = gpar(fontsize = 9),
   top_annotation = ha,
-  column_title = "VIPER TF Expression",
+  column_title = "TF Gene Expression (Z-Score)",
   show_row_names = TRUE,
-  column_split = sample_types,
+  column_split = sample_types_factor,
   cluster_columns = TRUE,
   cluster_column_slices = TRUE,
   column_order = NULL,
   col = col_fun
 )
 pdf(path, width = 10, height = 15)
-ht <- draw(hm)
+ht_gex <- draw(hm_gex)
 dev.off()
 
 # Get the row order from heatmap
-row_order_vector <- rownames(tf_activity_filtered)[row_order(ht)]
+row_order_vector <- rownames(tf_expression_zscore)[row_order(ht_gex)]
 
-# Merge EM and CM differential TFs
-diffs_mtfr_tfs <- unique(c(rownames(diff_em_filtered), rownames(diff_cm_filtered)))
-
-# Save the TF activity matrix with ordered rows
-tf_activity_final <- tf_activity_filtered[row_order_vector, ]
-saveRDS(tf_activity_final, file = file.path(mem_tcell, "viper_tf_activity_memTcells_mtfr_tfs.RDS"))
 
 #########################################################################
 # methylTFR heatmap for the differential TFs
@@ -206,7 +204,10 @@ saveRDS(tf_activity_final, file = file.path(mem_tcell, "viper_tf_activity_memTce
 
 # load zscores for differential motifs
 zscores_diffmotifs <- readRDS(file.path(mem_tcell, "zscores_diffmotifs_jaspar2020.RDS"))
+
+# Order rows based on the GEX heatmap clustering
 zscores_diffmotifs <- zscores_diffmotifs[row_order_vector, ]
+
 colnames(zscores_diffmotifs) <- c(
   "Hf03_CM", "Hf03_EM", "Hf03_TN", "Hf04_CM", "Hf04_EM",
   "Hf04_TN", "Hf04_TEMRA"
@@ -233,7 +234,7 @@ hm <- Heatmap(
   show_row_names = TRUE,
   column_split = sample_types,
   cluster_columns = TRUE,
-  cluster_rows = FALSE,
+  cluster_rows = FALSE, # Use the order from GEX heatmap
   cluster_column_slices = TRUE,
   column_order = NULL
 )
@@ -241,45 +242,6 @@ pdf(path, width = 10, height = 15)
 ht <- draw(hm)
 dev.off()
 
-#########################################################################
-# Correlation between methylTFR and VIPER TF activity
-#########################################################################
-
-# Sort to match the order of methylTFR
-zmat <- tf_activity_final[, colnames(zscores_diffmotifs)]
-mtfr_devs <- zscores_diffmotifs[row_order_vector, ]
-zmat <- zmat[row_order_vector, ]
-
-# Calculate row-wise correlation
-row_correlation <- sapply(seq_len(nrow(zmat)), function(i) {
-  cor(zmat[i, ], mtfr_devs[i, ]) # ), use = "complete.obs") 
-})
-
-# Convert to a data frame for better readability
-row_correlation_df <- data.frame(
-  RowName = rownames(zmat),
-  Correlation = row_correlation
-)
-
-# Convert row-wise correlation vector to a matrix for heatmap plotting
-correlation_matrix <- as.matrix(row_correlation)
-rownames(correlation_matrix) <- rownames(zmat) # Add row names for better interpretation
-
-# Create the heatmap
-cm <- Heatmap(
-  correlation_matrix,
-  name = "Correlation", # Name for the heatmap legend
-  cluster_rows = FALSE, # Cluster rows
-  show_row_names = TRUE, # Show row names
-  cluster_columns = FALSE, # No clustering for columns since it's a single column
-  # Use the desired color scheme: dark magenta (-1) -> white (0) -> dark olive green (1)
-  col = colorRamp2(c(-1, 0, 1), c("#800040", "white", "#408000")),  # Color scale
-  heatmap_legend_param = list(title = "Row Correlation") # Legend settings
-)
-
-pdf(paste0(plot_dir, "/correlation_heatmap.pdf"), width = 5, height = 10)
-draw(cm)
-dev.off()
 
 #########################################################################
 # Mean difference plots for EM vs TN and CM vs TN
@@ -449,6 +411,9 @@ plotlog2OR <- function(df){
     "Not differential"
   ))
   
+  # Create label column: NA if "Not differential"
+  df$label <- ifelse(df$isDiff != "Not differential", df$motifs, NA)
+  
   p <- ggplot(df, aes(x = log2OR, y = zdiff, color = isDiff)) +
     geom_point(alpha = 0.7, size = 3) +
     
@@ -467,7 +432,8 @@ plotlog2OR <- function(df){
       "LOLA differential" = "dodgerblue", 
       "Not differential" = "gray50"
     )) +
-    geom_text_repel(aes(label = motifs), size = 3.5, box.padding = 0.5, max.overlaps = 15) +
+    # Use the new 'label' column for repel
+    geom_text_repel(aes(label = label), size = 3.5, box.padding = 0.5, max.overlaps = 15) +
     geom_hline(yintercept = 0, linetype = "dotted", color = "black") +
     geom_vline(xintercept = 0, linetype = "dotted", color = "black")
   

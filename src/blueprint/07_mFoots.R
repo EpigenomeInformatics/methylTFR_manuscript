@@ -48,8 +48,9 @@ if (!file.exists(paste0(debug, "methylation_sites_merged_GRangesList.rds"))) {
 
 # Prepare motif data
 motifSet <- "JASPAR2020"
-gcfreqs <- getGCfreq("JASPAR2020_distal")
 tf_bindsites <- getTFbindsites(motifSet)
+motifSet <- "JASPAR2020_distal"
+gcfreqs <- getGCfreq(motifSet)
 gc_dist <- getGenomeGC("hg38")
 
 # Define the TFs of interest
@@ -62,19 +63,12 @@ tfs <- c(
 )
 tf_bindsites <- tf_bindsites[names(tf_bindsites) %in% tfs]
 
-if (!file.exists("/icbb/projects/share/annotations/methylTFRAnnotationHg38/inst/extdata/distal_regions.RDS")) {
-  distal <- fread("/icbb/projects/share/annotations/lolaDB/hg38/EnsemblRegBuildBP/regions/regionSet_1.bed", header = FALSE)
-  distal$V6 <- str_replace(distal$V6, ".", "*")
-  distal <- GRanges(
-    seqnames = distal$V1,
-    ranges = IRanges(start = distal$V2, end = distal$V3),
-    strand = distal$V6
-  )
-  saveRDS(distal, "/icbb/projects/share/annotations/methylTFRAnnotationHg38/inst/extdata/distal_regions.RDS")
+distal <- readRDS("/icbb/projects/share/annotations/methylTFRAnnotationHg38/inst/extdata/distal_regions.RDS")
+distal <- if (motifSet == "JASPAR2020_distal") {
+  distal
 } else {
-  distal <- readRDS("/icbb/projects/share/annotations/methylTFRAnnotationHg38/inst/extdata/distal_regions.RDS")
+  NULL
 }
-
 # Function to generate and save a plot for all samples
 plot_and_save_difference <- function(samples, save_dir, obs_colors) {
   for (motif in names(tf_bindsites)) {

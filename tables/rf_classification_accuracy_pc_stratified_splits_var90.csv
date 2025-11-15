@@ -1,0 +1,4 @@
+"Representation","Accuracy","NumPCs"
+"mTFR",0.872,9
+"Distal",0.905333333333333,22
+"Tiling1kb",0.829333333333333,57

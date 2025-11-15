@@ -48,8 +48,9 @@ if (!file.exists(paste0(debug, "methylation_sites_merged_GRangesList.rds"))) {
 
 # Prepare motif data
 motifSet <- "JASPAR2020"
-gcfreqs <- getGCfreq("JASPAR2020_distal")
 tf_bindsites <- getTFbindsites(motifSet)
+motifSet <- "JASPAR2020_distal"
+gcfreqs <- getGCfreq(motifSet)
 gc_dist <- getGenomeGC("hg38")
 
 # Define the TFs of interest
