@@ -39,7 +39,7 @@ cut_mean_diff <- 0.0
 #########################################################################
 
 # Loading deviations scores
-deviations_raw <- readRDS("/scratch/icbb/igunduz/methylTFR_manuscript/memoryTcells/mTFR_devs_071125/jaspar2020_distal_deviations.RDS")
+deviations_raw <- readRDS("/scratch/icbb/igunduz/methylTFR_manuscript/memoryTcells/mTFR_devs_131125/jaspar2020_distal_deviations.RDS")
 deviations <- deviations(deviations_raw)
 
 ### EM vs TN

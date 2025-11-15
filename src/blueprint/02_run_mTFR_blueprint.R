@@ -56,7 +56,7 @@ for (motifSet in motifSetList) {
     motifSet
   }
   gcfreqs <- getGCfreq(motifSet)
-  gc_dist <- getGenomeGC("hg38")  
+  gc_dist <- getGenomeGC("hg38")
   tf_bindsites <- getTFbindsites(motifSet = tfset)
 
   logger::log_info("Number of motifs in gcfreqs: ", length(gcfreqs))

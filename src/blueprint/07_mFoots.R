@@ -23,25 +23,27 @@ source("/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/s
 main.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/"
 sample_dir <- paste0(main.dir, "TB_RnBeads_271025/")
 debug <- paste0(main.dir, "debug/")
-if(!dir.exists(debug)){dir.create(debug)}
+if (!dir.exists(debug)) {
+  dir.create(debug)
+}
 plot_dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/figures/blueprint/"
 plot_dir <- paste0(plot_dir, "mFoot_ND/")
-if(!dir.exists(plot_dir)){dir.create(plot_dir)}
+if (!dir.exists(plot_dir)) {
+  dir.create(plot_dir)
+}
 
-if(!file.exists(paste0(debug, "methylation_sites_merged_GRangesList.rds"))){
+if (!file.exists(paste0(debug, "methylation_sites_merged_GRangesList.rds"))) {
+  # Load RnBeads preprocessed data
+  rnb_set <- RnBeads::load.rnb.set(paste0(sample_dir, "reports/data_import_data/rnb.set_preprocessed"))
 
-# Load RnBeads preprocessed data
-rnb_set <- RnBeads::load.rnb.set(paste0(sample_dir, "reports/data_import_data/rnb.set_preprocessed"))
+  # Merging cell type replicates
+  rnbset_merged <- mergeSamples(rnb_set, "cellTypeGroup")
 
-# Merging cell type replicates
-rnbset_merged <- mergeSamples(rnb_set, "cellTypeGroup")
-
-# Get the methylation sites as GRangesList
-msites <- rnb.RnBSet.to.GRangesList(rnbset_merged)
-saveRDS(msites, paste0(debug, "methylation_sites_merged_GRangesList.rds"))
-
-}else{
-    msites <- readRDS(paste0(debug, "methylation_sites_merged_GRangesList.rds"))
+  # Get the methylation sites as GRangesList
+  msites <- rnb.RnBSet.to.GRangesList(rnbset_merged)
+  saveRDS(msites, paste0(debug, "methylation_sites_merged_GRangesList.rds"))
+} else {
+  msites <- readRDS(paste0(debug, "methylation_sites_merged_GRangesList.rds"))
 }
 
 # Prepare motif data
@@ -51,7 +53,7 @@ tf_bindsites <- getTFbindsites(motifSet)
 gc_dist <- getGenomeGC("hg38")
 
 # Define the TFs of interest
-tfs <-  c(
+tfs <- c(
   "TFAP2B", "PAX5", "PAX9", "PAX1", "NHLH2", "ASCL1", "NHLH1", "BHLHE22", "FERD3L", "PAX6",
   "EMX1", "PAX4", "EN1", "LHX1", "ELF4", "ELF2", "ETV5", "ETV6", "ELF5", "SPIC",
   "SPIB", "SPI1", "EHF", "ELF3", "IKZF1", "TFAP2C", "TFAP2B", "TFAP2A", "TFAP2E", "TFAP2C",
@@ -60,20 +62,21 @@ tfs <-  c(
 )
 tf_bindsites <- tf_bindsites[names(tf_bindsites) %in% tfs]
 
-if(!file.exists("/icbb/projects/share/annotations/methylTFRAnnotationHg38/inst/extdata/distal_regions.RDS")){
-    distal <- fread("/icbb/projects/share/annotations/lolaDB/hg38/EnsemblRegBuildBP/regions/regionSet_1.bed", header = FALSE) 
-    distal$V6 <- str_replace(distal$V6, ".", "*")
-    distal <- GRanges(seqnames = distal$V1,
-                  ranges = IRanges(start = distal$V2, end = distal$V3), 
-                  strand = distal$V6)
-    saveRDS(distal, "/icbb/projects/share/annotations/methylTFRAnnotationHg38/inst/extdata/distal_regions.RDS")
-}else{
-    distal <- readRDS("/icbb/projects/share/annotations/methylTFRAnnotationHg38/inst/extdata/distal_regions.RDS")
+if (!file.exists("/icbb/projects/share/annotations/methylTFRAnnotationHg38/inst/extdata/distal_regions.RDS")) {
+  distal <- fread("/icbb/projects/share/annotations/lolaDB/hg38/EnsemblRegBuildBP/regions/regionSet_1.bed", header = FALSE)
+  distal$V6 <- str_replace(distal$V6, ".", "*")
+  distal <- GRanges(
+    seqnames = distal$V1,
+    ranges = IRanges(start = distal$V2, end = distal$V3),
+    strand = distal$V6
+  )
+  saveRDS(distal, "/icbb/projects/share/annotations/methylTFRAnnotationHg38/inst/extdata/distal_regions.RDS")
+} else {
+  distal <- readRDS("/icbb/projects/share/annotations/methylTFRAnnotationHg38/inst/extdata/distal_regions.RDS")
 }
- 
+
 # Function to generate and save a plot for all samples
 plot_and_save_difference <- function(samples, save_dir, obs_colors) {
-
   for (motif in names(tf_bindsites)) {
     if (!file.exists(file.path(save_dir, paste0("TF_footprint_diff_", motif, ".pdf")))) {
       logger.start(paste("Processing motif", motif, "for B and Tcell samples"))
@@ -95,7 +98,7 @@ plot_and_save_difference <- function(samples, save_dir, obs_colors) {
         difference_data[, type := paste("Observed divided Expected", cell_type)]
 
         # Now normalize the ratio by flanking region
-        flankNorm <- 50
+        flankNorm <- 30
         flank <- max(abs(difference_data$x), na.rm = TRUE)
         idx <- abs(difference_data$x) >= flank - flankNorm
         norm_factor <- mean(difference_data$avg_methyl[idx], na.rm = TRUE)

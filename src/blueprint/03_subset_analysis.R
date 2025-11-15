@@ -116,10 +116,11 @@ source("/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/s
 # Plot Volcano plot
 comparisons <- names(res$region)
 outputDir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/figures/blueprint/"
-lolaVolcanoPlot(cell = NULL,
-        lolaDb = lolaDb,
-        outputDir = outputDir,
-        comparison = comparisons,
-        region = "tiling1kb",
-        database = "TF_motifs"
+lolaVolcanoPlot(
+  cell = NULL,
+  lolaDb = lolaDb,
+  outputDir = outputDir,
+  comparison = comparisons,
+  region = "tiling1kb",
+  database = "TF_motifs"
 )
