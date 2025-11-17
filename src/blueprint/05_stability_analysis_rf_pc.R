@@ -30,8 +30,8 @@ table_dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manusc
 if (!dir.exists(fig_dir)) dir.create(fig_dir, recursive = TRUE)
 sannot <- read.csv("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/RnBeads_291025/reports/data_import_data/annotation.csv", stringsAsFactors = FALSE)
 # n_pc <- 20 # Replaced by dynamic selection
-var_threshold <- 0.90 # Use PCs explaining 90% of variance
-max_pc <- 20 # Set a maximum cap for number of PCs
+var_threshold <- 0.95 # Use PCs explaining 90% of variance
+max_pc <- 15 # Set a maximum cap for number of PCs
 
 # Remap to cleaner group names
 group_remap <- c(
@@ -158,22 +158,22 @@ cv_rf_stratified_splits <- function(mat, labels, repeats = 10, test_frac = 0.2, 
 select_pcs_by_variance <- function(pca_obj, threshold = 0.90, max_pcs = 30) {
   variances <- pca_obj$sdev^2
   cum_var_prop <- cumsum(variances) / sum(variances)
-  
+
   # Find the first component that meets or exceeds the threshold
   n_pcs_variance_candidates <- which(cum_var_prop >= threshold)
-  
+
   n_pcs_variance <- if (length(n_pcs_variance_candidates) > 0) {
     n_pcs_variance_candidates[1] # Take the first one
   } else {
     length(pca_obj$sdev) # Use all PCs if threshold is never met
   }
-  
+
   # Apply the cap
   n_pcs <- min(n_pcs_variance, max_pcs)
-  
+
   # Also cap by the total number of available PCs
   n_pcs <- min(n_pcs, length(pca_obj$sdev))
-  
+
   return(n_pcs)
 }
 

@@ -4,7 +4,7 @@
 # Created by RN on 13-11-2025
 # Script to plot heatmap of differential TFs from mTFR
 #####################################################################
-#!/usr/bin/env Rscript
+# !/usr/bin/env Rscript
 
 suppressPackageStartupMessages({
   library(methylTFR)
@@ -18,37 +18,29 @@ suppressPackageStartupMessages({
 })
 
 set.seed(12)
-
 plot_dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/figures/blueprint/"
 results_dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/tables/"
 dir.create(plot_dir, recursive = TRUE, showWarnings = FALSE)
-
 deviations_raw <- readRDS("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/mTFR_devs_121125/JASPAR2020_distal_deviations.RDS")
 deviations_raw <- deviations_raw[, !colnames(deviations_raw) %in% "Bcell_naive_VB_NBC_NC11_83.bed"]
 deviations <- deviations(deviations_raw)
-
 sannot <- read.csv("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/RnBeads_291025/reports/data_import_data/annotation.csv", stringsAsFactors = FALSE)
 sannot$bedFile <- as.character(sannot$bedFile)
 sample_names <- colnames(deviations)
 sample_names_basenames <- basename(sample_names)
 sannot_bedfiles_basenames <- basename(sannot$bedFile)
 match_indices <- match(sample_names_basenames, sannot_bedfiles_basenames)
-
 cell_types <- sannot$cellTypeGroup[match_indices]
 cell_subtypes <- sannot$cellTypeShort[match_indices]
-
 subset_idx <- grepl("Bcell|Tcell", cell_types, ignore.case = TRUE) &
   !is.na(cell_types) &
   !grepl("Thym", cell_subtypes, ignore.case = TRUE)
-
 deviations <- deviations[, subset_idx]
 sample_names_filtered <- sample_names[subset_idx]
 cell_types_filtered <- cell_types[subset_idx]
 cell_subtypes_filtered <- cell_subtypes[subset_idx]
-
 tdf <- as.data.frame(t(deviations))
 pca_result <- prcomp(tdf, center = FALSE, scale. = FALSE)
-
 pca_annot <- data.frame(
   SampleID = sample_names_filtered,
   Group = cell_types_filtered,
@@ -56,28 +48,26 @@ pca_annot <- data.frame(
   stringsAsFactors = FALSE
 )
 tdf$Subtype <- pca_annot$Subtype[match(rownames(tdf), pca_annot$SampleID)]
-
+tdf$Group <- pca_annot$Group[match(rownames(tdf), pca_annot$SampleID)]
 b_subtypes <- sort(unique(
   pca_annot$Subtype[grepl("Bcell", pca_annot$Group, ignore.case = TRUE)]
 ))
 t_subtypes <- sort(unique(
   pca_annot$Subtype[grepl("Tcell", pca_annot$Group, ignore.case = TRUE)]
 ))
-
 n_b_subtypes <- length(b_subtypes)
 n_t_subtypes <- length(t_subtypes)
-
+b_full_palette <- brewer.pal(9, "Blues")
+t_full_palette <- brewer.pal(9, "YlOrBr")
 b_palette_vals <- colorRampPalette(
-  brewer.pal(max(3, min(n_b_subtypes, 9)), "YlOrBr")
+  b_full_palette[3:9]
 )(n_b_subtypes)
 t_palette_vals <- colorRampPalette(
-  brewer.pal(max(3, min(n_t_subtypes, 9)), "Blues")
+  t_full_palette[3:9]
 )(n_t_subtypes)
-
 names(b_palette_vals) <- b_subtypes
 names(t_palette_vals) <- t_subtypes
 combined_palette <- c(b_palette_vals, t_palette_vals)
-
 fig_path <- paste0(plot_dir, "PCA_deviations_B_and_T_subsets_noThym.pdf")
 p <- autoplot(pca_result,
   data = tdf,
@@ -88,7 +78,6 @@ p <- autoplot(pca_result,
   theme_classic() +
   scale_color_manual(values = combined_palette, name = "Cell Subtype") +
   theme(legend.position = "bottom")
-
 pdf(fig_path, width = 10, height = 10)
 print(p)
 dev.off()
