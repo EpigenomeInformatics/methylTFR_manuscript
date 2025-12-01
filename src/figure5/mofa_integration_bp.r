@@ -401,21 +401,14 @@ p <- draw(p)
 row_order_indices <- row_order(p)  
 
 # Set color scheme
-colors.cv <- ChrAccR::getConfigElement("colorSchemesCont")
-colors.cv <- colors.cv[[".default.div"]]
-c <- grDevices::colorRampPalette(colors.cv)(nrow(viper_filtered))
-
-col_fun <- colorRamp2(
-  seq(-5, 5, length.out = length(c)),
-  c
-)
+col_fun <- colorRamp2(seq(-2,2, length.out = 100), viridis(100))
 
 pdf(file.path(plot_dir, "mofa_viper_bp.pdf"))
 Heatmap(
   viper_filtered,
   row_names_gp = gpar(fontsize = 4),
   top_annotation = ha,
-  column_title = "chromVar Z-Scores of TFs from Mofa analysis",
+  column_title = "Viper Z-Scores of TFs from Mofa analysis",
   show_row_names = TRUE,
   show_column_names = FALSE,
   column_split = column_split_factor, # Split columns by the desired order
