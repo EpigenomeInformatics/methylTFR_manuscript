@@ -41,7 +41,7 @@ cell_type_colors <- c(
 )
 
 # Paths
-plot_dir <- "/icbb/projects/nitschre/methylTFR/figures/figure5/"
+plot_dir <- "/icbb/projects/nitschre/methylTFR/figures/figure5_v2/"
 r_objects_dir <- "/icbb/projects/nitschre/methylTFR/r_objects/"
 dir.create(plot_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(r_objects_dir, recursive = TRUE, showWarnings = FALSE)
@@ -58,11 +58,17 @@ annot <- annot %>%
   subset(ids %in% colnames(rnaViper)) %>% # Only keep overlaps
   filter(!duplicated(ids)) %>% # Remove duplicates
   slice(match(colnames(rnaViper), ids)) # Same order as in rnaViper
- 
+
 mtfr <- deviationZScores(mtfr)
 mtfr <- mtfr[, colnames(mtfr) %in% annot$bedFile]
 mtfr <- mtfr[,match(annot$bedFile, colnames(mtfr))]
 colnames(mtfr) <- colnames(rnaViper)
+
+# remove celltype "other"
+remove <- annot$cellTypeGroup == "other"
+mtfr <- mtfr[,!remove]
+rnaViper <- rnaViper[,!remove]
+annot <- subset(annot, cellTypeGroup != "other")
 
 # zscores
 rnaViper <- scale(rnaViper)
@@ -88,7 +94,7 @@ samples_metadata(MOFAobject) <- metadata
 
 # Prepare and train MOFA (save HDF5)
 MOFAobject <- prepare_mofa(MOFAobject)
-outfile <- file.path(r_objects_dir, "viper_mtfr_model.hdf5")
+outfile <- file.path(r_objects_dir, "viper_mtfr_model_v2.hdf5")
 
 # If model file exists, load trained object; otherwise run training
 if(file.exists(outfile)){
@@ -145,7 +151,7 @@ p_factors_scatter <- ggplot(factors_wide, aes_string(x = f_x, y = f_y, color = "
   theme_classic(base_size = 13) +
   theme(legend.position = "right")
 
-ggsave(filename = file.path(plot_dir, "factor_scatter_Fx_Fy.pdf"), plot = p_factors_scatter,
+ggsave(filename = file.path(plot_dir, "factor_scatter_Fx_Fy_v2.pdf"), plot = p_factors_scatter,
        width = 7, height = 5)
 
 # Variance explained per view × factor (from MOFA)
@@ -357,6 +363,8 @@ mtfr     <- readRDS("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/mTFR_d
 mtfr <- mtfr[, colnames(mtfr) %in% annot$bedFile]
 mtfr <- mtfr[,match(annot$bedFile, colnames(mtfr))]
 
+rnaViper <- rnaViper[,colnames(rnaViper) %in% annot$ids]
+
 mtfr<- methylTFR:::computeRowZScore(deviations(mtfr))
 viper<- methylTFR:::computeRowZScore(rnaViper)
 
@@ -440,6 +448,7 @@ cm <- Heatmap(
   show_row_names = FALSE, # Show row names
   cluster_columns = FALSE, # No clustering for columns since it's a single column
   col = col_fun,
+  row_order = row_order_indices,
   heatmap_legend_param = list(title = "Row Correlation") # Legend settings
 )
 
@@ -482,16 +491,30 @@ for (motif in common_TFs){
     mtfr = mtfr_subs,
     celltype = metadata$celltype
 )
-cor <- cor(data_scatter$viper, data_scatter$mtfr, method="spearman")
+cor <- cor(data_scatter$viper, data_scatter$mtfr)
 
 p_data_scatter <- ggplot(data_scatter, aes(x = viper, y = mtfr, color = celltype)) +
   geom_point() +
   geom_smooth(method = "lm", color = "red", se = FALSE) +
   scale_color_manual(values = cell_type_colors) +
   theme_classic(base_size = 13) +
-  labs(caption = paste0("Cor. Coef.:",round(cor, 1))) +
+  labs(caption = paste0("Cor. Coef.:",round(cor, 2))) +
   theme(plot.caption = element_text(hjust = 0.5, size = 10))+
   labs(title = paste0("TF Activity Correlation (viper vs mtfr) for ", motif))
 ggsave(filename = file.path(paste0(plot_dir,"scatterplots/",motif,"_viper_vs_mtfr_scatter.pdf")),
  plot = p_data_scatter, width = 6, height = 5)
 }
+
+# Read in R2 values
+r2 <- read.csv("/icbb/projects/nitschre/methylTFR/figures/figure5_v2/r2Values_bp.csv")
+
+# Barplot R2 values
+p <- ggplot(r2,aes(x=reorder(Factor, -R2), y=R2))+
+        geom_bar(stat="identity")+
+        theme_classic()+
+        labs(
+            title="R2 values of MOFA analysis",
+            x="Factors")+
+        theme(
+            axis.text.x = element_text(angle = 45, hjust = 1))
+ggsave(paste0(plot_dir, "barplots_R2.pdf"), p)
