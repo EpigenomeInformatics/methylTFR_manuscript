@@ -201,7 +201,7 @@ p_modality_frac <- ggplot(agg, aes(x = factor, y = frac, fill = view)) +
   geom_text(aes(label = ifelse(frac > 0.03, paste0(round(frac*100,1), "%"), "")),
             position = position_stack(vjust = 0.5), size = 3) +
   scale_y_continuous(labels = percent_format(accuracy = 1)) +
-  scale_fill_viridis_d(option = "E") +
+  scale_fill_manual(values = c("#DC4F4F", "#7ABB55")) +
   labs(x = "Factor", y = "Relative contribution (|weights| fraction)", fill = "View",
        title = "Modality contribution per factor (weights-based)") +
   theme_classic(base_size = 12)
