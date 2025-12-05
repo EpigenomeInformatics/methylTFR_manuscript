@@ -15,7 +15,7 @@ suppressPackageStartupMessages({
 set.seed(12)
 
 # Set up
-plot_dir <- "/icbb/projects/nitschre/methylTFR/figures/blueprint"
+plot_dir <- "/icbb/projects/nitschre/methylTFR/figures/blueprint/Heatmaps_differentials/"
 results_dir <- "/icbb/projects/nitschre/methylTFR/r_objects/"
 dir.create(plot_dir, recursive = TRUE, showWarnings = FALSE)
 
@@ -34,17 +34,19 @@ colnames(deviations) <- case_when(
 groups <- colnames(deviations)
 
 # Perform differential analysis
-if(file.exists(paste0(results_dir, "diff_BvsT.RDS")){
+if(file.exists(paste0(results_dir, "diff_BvsT.RDS"))) {  
   diff <- readRDS(paste0(results_dir, "diff_BvsT.RDS"))
-} else{
-  diff <- differential_deviation_test(deviations, groups=groups, alternative="two.sided", parametric = TRUE)
+} else {
+  diff <- differential_deviation_test(deviations, groups=groups, 
+                                     alternative="two.sided", parametric = TRUE)
   saveRDS(diff, file=paste0(results_dir, "diff_BvsT.RDS"))
-})
+}
+
 
 # Filter for  pval < .05 and keep top 50 with smallest pvalue
 top50 <- diff %>%
-  filter(p_value_adjusted < 0.05)
-  arrange(p_value_adjusted)
+  filter(p_value_adjusted < 0.05) %>%
+  arrange(p_value_adjusted) %>%
   head(50)
 
 # Get Z-scores
@@ -58,15 +60,21 @@ ha <- HeatmapAnnotation(
   celltypes=colnames(deviations),
   col = list(celltypes = c("Bcell" = "#2B4B9B", "Tcell"="#D76016"))
 )
+
+# Color scheme
+col <- muRtools::colpal.cont(100, "cptcity.arendal_temperature")
+
 # Plot heatmap
-pdf(paste0(plot_dir, "heatmap_BvsTcells.pdf"))
-Heatmap(
+ht <- Heatmap(
   zscores_filtered, column_names_gp = gpar(fontsize = 9),
   top_annotation = ha,
   column_title = "Z-Scores of differential TFs in Tcells vs Bcells",
   heatmap_legend_param = list(title = "methylTFR Z-scores"),
   show_row_names = TRUE,
-  show_column_names = FALSE)
+  show_column_names = FALSE,
+  col = col)
+pdf(paste0(plot_dir, "heatmap_BvsTcells.pdf"))
+draw(ht)
 dev.off()
 
 ## Additional columns
@@ -76,22 +84,19 @@ mean_tcells <- rowMeans(zscores_filtered[,grep("TCD", colnames(zscores_filtered)
 zscores_diff <- as.matrix(mean_bcells - mean_tcells)
 
 row_order <- ht %>%
-  draw()
+  draw() %>%
   row_order()
 
-# Color scheme
-col_fun <- colorRamp2(c(min(zscores_diff), max(zscores_diff)), c("#DCEDC8", "#1A237E"))
-
 # Draw column
-pdf(paste0(plot_dir, "meanZscoreDiff_BvsTcells.pdf"), width = 2)
+pdf(paste0(plot_dir, "meanZscoreDiff_BvsTcells.pdf"))
 Heatmap(
   zscores_diff, column_names_gp = gpar(fontsize = 9),
   cluster_rows = FALSE,
-  show_row_names = FALSE,
+  show_row_names = TRUE,
   show_column_names = FALSE,
   row_order = row_order,
   heatmap_legend_param = list(title = "Mean z-score difference"),
-  col = col_fun)
+)
 dev.off()
 
 # Column for pvalue adj
