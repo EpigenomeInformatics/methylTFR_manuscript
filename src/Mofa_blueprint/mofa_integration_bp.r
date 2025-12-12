@@ -25,7 +25,7 @@ set.seed(12)
 # Define custom colors for cell types
 cell_type_colors <- c(
   "Bcell" = "#1f77b4",
-  "DC" = "#ff7f0e",
+  "DC" = "#f3e303ff",
   "eryt" = "#2ca02c",
   "gran" = "#d62728",
   "megK" = "#9467bd",
@@ -41,7 +41,7 @@ cell_type_colors <- c(
 )
 
 # Paths
-plot_dir <- "/icbb/projects/nitschre/methylTFR/figures/figure5_v2/"
+plot_dir <- "/icbb/projects/nitschre/methylTFR/figures/figure5_v3/"
 r_objects_dir <- "/icbb/projects/nitschre/methylTFR/r_objects/"
 dir.create(plot_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(r_objects_dir, recursive = TRUE, showWarnings = FALSE)
@@ -63,12 +63,6 @@ mtfr <- deviationZScores(mtfr)
 mtfr <- mtfr[, colnames(mtfr) %in% annot$bedFile]
 mtfr <- mtfr[,match(annot$bedFile, colnames(mtfr))]
 colnames(mtfr) <- colnames(rnaViper)
-
-# remove celltype "other"
-remove <- annot$cellTypeGroup == "other"
-mtfr <- mtfr[,!remove]
-rnaViper <- rnaViper[,!remove]
-annot <- subset(annot, cellTypeGroup != "other")
 
 # zscores
 rnaViper <- scale(rnaViper)
@@ -94,7 +88,12 @@ samples_metadata(MOFAobject) <- metadata
 
 # Prepare and train MOFA (save HDF5)
 MOFAobject <- prepare_mofa(MOFAobject)
-outfile <- file.path(r_objects_dir, "viper_mtfr_model_v2.hdf5")
+outfile <- file.path(r_objects_dir, "viper_mtfr_model_v3.hdf5")
+
+# Reduce number of factors
+model_opts <- get_default_model_options(MOFAobject)
+model_opts$num_factors <- 12
+MOFAobject <- prepare_mofa(MOFAobject, model_options = model_opts)
 
 # If model file exists, load trained object; otherwise run training
 if(file.exists(outfile)){
@@ -125,6 +124,7 @@ r2_df <- r2_df %>% arrange(desc(R2))
 write.csv(r2_df, file.path(plot_dir, "r2Values_bp.csv"), row.names = FALSE)
 
 # Choose top factors (by R2) for plotting
+r2_df <- r2_df[r2_df$Factor!="Factor1",] # Remove Factor 1 because it is highly correlated with total numbers of expressed features
 top_n <- 5
 top_factors <- head(r2_df$Factor, top_n)
 
@@ -134,7 +134,7 @@ factors_wide <- factors_long %>%
 
 # default pair: top two factors by R2 (if <2 fallback to 1,2)
 f_x <- ifelse(length(top_factors) >= 1, top_factors[1], "1")
-f_y <- ifelse(length(top_factors) >= 2, top_factors[2], "2")
+f_y <- ifelse(length(top_factors) >= 2, top_factors[3], "2")
 
 if(!(f_x %in% colnames(factors_wide)) | !(f_y %in% colnames(factors_wide))){
   # fallback to numeric factor names if needed
@@ -151,7 +151,7 @@ p_factors_scatter <- ggplot(factors_wide, aes_string(x = f_x, y = f_y, color = "
   theme_classic(base_size = 13) +
   theme(legend.position = "right")
 
-ggsave(filename = file.path(plot_dir, "factor_scatter_Fx_Fy_v2.pdf"), plot = p_factors_scatter,
+ggsave(filename = file.path(plot_dir, "factor_scatter_Fx_Fy_Factor4_3.pdf"), plot = p_factors_scatter,
        width = 7, height = 5)
 
 # Variance explained per view × factor (from MOFA)
@@ -180,6 +180,7 @@ pvar <- ggplot(r2_long, aes(x = factor, y = r2, fill = view)) +
 
 ggsave(filename = file.path(plot_dir, "variance_explained_topFactors.pdf"), plot = pvar,
        width = 8, height = 4)
+
 # Get weights and prepare modality contribution plots
 weights_df <- get_weights(MOFAobject.trained, as.data.frame = TRUE)
 weights_df <- weights_df %>% mutate(value_abs = abs(value), value_signed = value)
@@ -201,7 +202,7 @@ p_modality_frac <- ggplot(agg, aes(x = factor, y = frac, fill = view)) +
   geom_text(aes(label = ifelse(frac > 0.03, paste0(round(frac*100,1), "%"), "")),
             position = position_stack(vjust = 0.5), size = 3) +
   scale_y_continuous(labels = percent_format(accuracy = 1)) +
-  scale_fill_manual(values = c("#DC4F4F", "#7ABB55")) +
+  scale_fill_viridis_d(option = "E") +
   labs(x = "Factor", y = "Relative contribution (|weights| fraction)", fill = "View",
        title = "Modality contribution per factor (weights-based)") +
   theme_classic(base_size = 12)
@@ -248,9 +249,9 @@ combined_fig <- (p_factors_scatter + p_modality_frac) / (p_variance_expl + p_dot
 ggsave(filename = file.path(plot_dir, "figure_combined_panels.pdf"), plot = combined_fig, width = 12, height = 10)
 
 # Save intermediate tables for reproducibility
-write.csv(agg, file.path(r_objects_dir, "modality_contribution_by_factor.csv"), row.names = FALSE)
-write.csv(weights_df, file.path(r_objects_dir, "MOFA_weights_long.csv"), row.names = FALSE)
-write.csv(r2_df, file.path(r_objects_dir, "factor_celltype_R2.csv"), row.names = FALSE)
+write.csv(agg, file.path(plot_dir, "modality_contribution_by_factor.csv"), row.names = FALSE)
+write.csv(weights_df, file.path(plot_dir, "MOFA_weights_long.csv"), row.names = FALSE)
+write.csv(r2_df, file.path(plot_dir, "factor_celltype_R2.csv"), row.names = FALSE)
 
 message("All done. Figures saved to: ", plot_dir, "  |  R objects / tables saved to: ", r_objects_dir)
 
@@ -312,8 +313,8 @@ ggsave(filename = file.path(plot_dir, "variance_explained_per_factor_topFactors.
        width = 9, height = 5)
 
 # Plot a correlation for single top TF between chromVar and mtfr (e.g., BATF)
-viper_BATF <- rnaViper["E2F4",]
-mtfr_BATF <- mtfr["E2F4",]
+viper_BATF <- rnaViper["BATF",]
+mtfr_BATF <- mtfr["BATF",]
 data_scatter <- data.frame(
   Viper = viper_BATF,
   mtfr = mtfr_BATF,
@@ -353,20 +354,22 @@ for(f in r2_df$Factor[1:5]){
 }
 write.csv(topTfs, file.path(plot_dir, "topTFs.csv"), row.names=FALSE)
 
-# Filter for unique TFs (8 doublets)
-mofaTFs <- unique(topTfs$feature)
-
+## Heatmaps
 # Rowwise zscores for heatmap
 rnaViper <- readRDS("/icbb/projects/nitschre/methylTFR/r_objects/bp_rna_counts_tf_activity.RDS")
 mtfr     <- readRDS("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/mTFR_devs_311025/jaspar2020_distal_deviations.RDS")
 
+# Same samples as cols
 mtfr <- mtfr[, colnames(mtfr) %in% annot$bedFile]
 mtfr <- mtfr[,match(annot$bedFile, colnames(mtfr))]
-
 rnaViper <- rnaViper[,colnames(rnaViper) %in% annot$ids]
 
+# Get  z-scores
 mtfr<- methylTFR:::computeRowZScore(deviations(mtfr))
 viper<- methylTFR:::computeRowZScore(rnaViper)
+
+# Filter for unique TFs (8 doublets)
+mofaTFs <- unique(topTfs$feature)
 
 # Filter for only Mofa TFs that are present in mtfr and viper
 common_TFs <- Reduce(intersect, list(mofaTFs, rownames(viper), rownames(mtfr)))
@@ -445,14 +448,14 @@ cm <- Heatmap(
   correlation_matrix,
   name = "Correlation", # Name for the heatmap legend
   cluster_rows = FALSE, # Cluster rows
-  show_row_names = FALSE, # Show row names
+  show_row_names = TRUE, # Show row names
   cluster_columns = FALSE, # No clustering for columns since it's a single column
   col = col_fun,
   row_order = row_order_indices,
   heatmap_legend_param = list(title = "Row Correlation") # Legend settings
 )
 
-pdf(paste0(plot_dir, "correlation_heatmap.pdf"), width = 1.5)
+pdf(paste0(plot_dir, "correlation_heatmap.pdf"))
 draw(cm)
 dev.off()
 
@@ -506,12 +509,13 @@ ggsave(filename = file.path(paste0(plot_dir,"scatterplots/",motif,"_viper_vs_mtf
 }
 
 # Read in R2 values
-r2 <- read.csv("/icbb/projects/nitschre/methylTFR/figures/figure5_v2/r2Values_bp.csv")
+r2 <- read.csv("/icbb/projects/nitschre/methylTFR/figures/figure5_v3/r2Values_bp.csv")
 
 # Barplot R2 values
 p <- ggplot(r2,aes(x=reorder(Factor, -R2), y=R2))+
         geom_bar(stat="identity")+
         theme_classic()+
+        ylim(0,1)+
         labs(
             title="R2 values of MOFA analysis",
             x="Factors")+
