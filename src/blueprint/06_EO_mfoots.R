@@ -85,6 +85,13 @@ plot_and_save_difference <- function(samples, save_dir, obs_colors) {
         difference_data <- plot_data$plotDF
         difference_data[, type := paste(type, cell_type, sep= "_")]
 
+        # Now normalize the ratio by flanking region
+        flankNorm= 50
+        flank <- max(abs(difference_data$x), na.rm = TRUE)
+        idx <- abs(difference_data$x) >= flank - flankNorm
+        norm_factor <- mean(difference_data$avg_methyl[idx], na.rm = TRUE)
+        difference_data[, avg_methyl := avg_methyl / norm_factor]
+
         return(difference_data)
       })) 
       #fwrite(combined_data, "combined_data2.csv")
