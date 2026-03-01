@@ -83,8 +83,20 @@ zscores <- deviationZScores(deviations_raw)
 zscores_filtered <- zscores[rownames(zscores) %in% c(rownames(diff_em_filtered), rownames(diff_cm_filtered)), ]
 saveRDS(zscores_filtered, file = file.path(mem_tcell, "zscores_diffmotifs_jaspar2020.RDS"))
 
+# TFs TOP 50 
+top50em <- diff_em_filtered %>%
+  arrange(p_value_adjusted, desc(mean_difference)) %>%
+  slice_head(n = 50)
+
+top50cm <- diff_cm_filtered %>%
+  arrange(p_value_adjusted, desc(mean_difference)) %>%
+  slice_head(n = 50)
+  
+zscores_filtered_top50 <- zscores[rownames(zscores) %in% c(rownames(top50em), rownames(top50cm)), ]
+saveRDS(zscores_filtered, file = file.path(mem_tcell, "zscores_diffmotifs_top50_jaspar2020.RDS"))
+
 #########################################################################
-# VIPER analysis for TF activity from gene expression data
+# TF activity from gene expression data
 #########################################################################
 
 # Get the RNA-seq data files
@@ -137,48 +149,38 @@ expr <- as.data.frame(expr_matrix)
 rownames(expr) <- make.unique(expr$gene_short_name)
 expr <- expr[, !colnames(expr) %in% c("gene_id_clean", "gene_id", "gene_short_name", "tracking_id")]
 
-# 1) Get human regulons (A–C for higher confidence)
-data(dorothea_hs, package = "dorothea")
-reg <- dorothea_hs %>% filter(confidence %in% c("A", "B", "C"))
-
-# 2) Build regulon object for VIPER
-regulon <- dorothea::df2regulon(reg)
-
-# 3) Single-sample TF activity (aREA)
-# expr must be a matrix with gene symbols as rownames
-tf_activity <- viper(as.matrix(expr), regulon, method = "scale", minsize = 5, eset.filter = FALSE)
-saveRDS(tf_activity, file = file.path(mem_tcell, "viper_tf_activity_memTcells.RDS"))
+saveRDS(expr, file = file.path(mem_tcell, "expr_tf_activity_memTcells.RDS"))
 
 ### Heatmap containing differential Tfs from mtfr
-mtfr_tfs <- readRDS(file.path(mem_tcell, "zscores_diffmotifs_jaspar2020.RDS"))
-tf_activity_filtered <- tf_activity[rownames(tf_activity) %in% rownames(mtfr_tfs), ]
+mtfr_tfs <- readRDS(file.path(mem_tcell, "zscores_diffmotifs_top50_jaspar2020.RDS"))
+expr_activity_filtered <- expr[rownames(expr) %in% rownames(mtfr_tfs), ]
 
 # Change sample names
-colnames(tf_activity_filtered) <- c("Hf03_CM", "Hf03_EM", "Hf03_TN", "Hf04_CM", "Hf04_EM", "Hf04_TN")
+colnames(expr_activity_filtered) <- c("Hf03_CM", "Hf03_EM", "Hf03_TN", "Hf04_CM", "Hf04_EM", "Hf04_TN")
 
 # Rowwise zscores of gex data
-tf_activity_filtered <- methylTFR:::computeRowZScore(tf_activity_filtered)
+expr_activity_filtered <- methylTFR:::computeRowZScore(as.matrix(expr_activity_filtered))
 
 ha <- HeatmapAnnotation(
   celltypes = c("CM", "EM", "TN", "CM", "EM", "TN"),
   col = list(celltypes = c("TN" = "#C8E0B4", "CM" = "#4492C6", "EM" = "#43B6C4"))
 )
 
-path <- file.path(plot_dir, "viper_tf_activity_memTcells_mtfr_tfs.pdf")
+path <- file.path(plot_dir, "expr_tf_activity_memTcells_mtfr_tfs.pdf")
 col_fun <- colorRamp2(
   seq(-2, 2, length.out = 70),
   viridis(70)
 )
 
 # Define sample types for column splitting
-sample_types <- sub("^.*_", "", colnames(tf_activity_filtered))
+sample_types <- sub("^.*_", "", colnames(expr_activity_filtered))
 sample_types <- factor(sample_types, levels = c("CM", "EM", "TN"))
 
 hm <- Heatmap(
-  tf_activity_filtered,
+  expr_activity_filtered,
   column_names_gp = gpar(fontsize = 9),
   top_annotation = ha,
-  column_title = "VIPER TF Expression",
+  column_title = "RNA TF Expression",
   show_row_names = TRUE,
   column_split = sample_types,
   cluster_columns = TRUE,
@@ -191,21 +193,21 @@ ht <- draw(hm)
 dev.off()
 
 # Get the row order from heatmap
-row_order_vector <- rownames(tf_activity_filtered)[row_order(ht)]
+row_order_vector <- rownames(expr_activity_filtered)[row_order(ht)]
 
 # Merge EM and CM differential TFs
 diffs_mtfr_tfs <- unique(c(rownames(diff_em_filtered), rownames(diff_cm_filtered)))
 
 # Save the TF activity matrix with ordered rows
-tf_activity_final <- tf_activity_filtered[row_order_vector, ]
-saveRDS(tf_activity_final, file = file.path(mem_tcell, "viper_tf_activity_memTcells_mtfr_tfs.RDS"))
+tf_activity_final <- expr_activity_filtered[row_order_vector, ]
+saveRDS(tf_activity_final, file = file.path(mem_tcell, "expr_tf_activity_memTcells_mtfr_tfs.RDS"))
 
 #########################################################################
 # methylTFR heatmap for the differential TFs
 #########################################################################
 
 # load zscores for differential motifs
-zscores_diffmotifs <- readRDS(file.path(mem_tcell, "zscores_diffmotifs_jaspar2020.RDS"))
+zscores_diffmotifs <- readRDS(file.path(mem_tcell, "zscores_diffmotifs_top50_jaspar2020.RDS"))
 zscores_diffmotifs <- zscores_diffmotifs[row_order_vector, ]
 colnames(zscores_diffmotifs) <- c(
   "Hf03_CM", "Hf03_EM", "Hf03_TN", "Hf04_CM", "Hf04_EM",
