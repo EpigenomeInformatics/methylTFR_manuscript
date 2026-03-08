@@ -25,15 +25,10 @@ cell_type_colors <- c(
   "DC" = "#EED5B7",
   "other" = "#8B8682",
   "gran" = "#ff7f50",
-  "eryt" = "#67000d",
   "Mf" = "#864a38",
   "mono" = "#CD7054",
-  "megK" = "#4a0221",
-  "NK" = "#bf812d",
-  "osteoclast" = "#DEB887",
   "Tcell" = "#40E0D0",
-  "thymocyte" = "#74c476",
-  "progenitor" = "#df65b0"
+  "thymocyte" = "#74c476"
 )
 
 
@@ -44,10 +39,13 @@ deviations <- deviations(deviations_raw)
 
 # Change sample names to cellTypeGroup
 annot <- read.csv("/icbb/projects/nitschre/methylTFR/sample_annotation/samples.tsv", sep="\t")
-annot <- subset(annot, bedFile %in% colnames(deviations)) %>%
+annot <- subset(annot, bedFile %in% colnames(deviations))
 
 deviations <- deviations[,match(annot$bedFile, colnames(deviations))]
 colnames(deviations) <- annot$cellTypeGroup
+
+deviations_raw <- deviations_raw[,match(annot$bedFile, colnames(deviations_raw))] 
+colnames(deviations_raw) <- annot$cellTypeGroup 
 
 # Compute zscores columnwise
 zscores <- computeColZScore(deviations)
@@ -67,15 +65,18 @@ top50 <- var %>%
   arrange(desc(variability)) %>%
   head(50)
 
+# Keep only samples that have at least 5 samples
+deviations_raw_filtered <- deviations_raw[,colnames(deviations_raw) %in% c("plasma", "gran", "Bcell", "DC","Mf","mono","other","Tcell","thymocyte")]
+
 # Get Z-scores
-zscores <- deviationZScores(deviations_raw)
+zscores <- deviationZScores(deviations_raw_filtered)
 
 # Filter for TFs that are in the top 50 variables
 zscores_filtered <- zscores[rownames(zscores) %in% c(rownames(top50)),]
 
 # Heatmap Annotation at the top of the plot
 ha <- HeatmapAnnotation(
-  celltypes=colnames(deviations),
+  celltypes=colnames(deviations_raw_filtered),
   col = list(celltypes = cell_type_colors)
 )
 
@@ -83,7 +84,7 @@ ha <- HeatmapAnnotation(
 col <- muRtools::colpal.cont(100, "cptcity.arendal_temperature")
 
 # Column split factor
-group <- colnames(deviations)
+group <- colnames(deviations_raw_filtered)
 column_split_factor <- factor(group, levels=unique(group))
 
 # Clipped matrix
