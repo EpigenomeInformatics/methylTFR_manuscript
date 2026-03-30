@@ -21,21 +21,22 @@ suppressPackageStartupMessages({
 })
 source("/icbb/projects/igunduz/methylTFR_manuscript/src/utils.R")
 
+
 cell_type_colors <- c(
-  "B-cells" = "#1f77b4",
-  "DC" = "#ff7f0e",
-  "Erythrocytes" = "#2ca02c",
-  "Granulocytes" = "#d62728",
-  "Megakaryocytes" = "#9467bd",
-  "Mf" = "#8c564b",
-  "Monocytes" = "#e377c2",
-  "NK" = "#7f7f7f",
-  "Osteoclast" = "#1b9e77",
-  "Other" = "#bcbd22",
-  "Plasma" = "#17becf",
-  "Progenitors" = "#2ca4a2",
-  "T-cells" = "#ff7f0e",
-  "Thymocyte" = "#6a5acd"
+  "B-cells" = "#980043",
+  "Plasma" = "#CD2990",
+  "DC" = "#EED5B7",
+  "Other" = "#8B8682",
+  "Granulocytes" = "#ff7f50",
+  "Erythrocytes" = "#67000d",
+  "Mf" = "#864a38",
+  "Monocytes" = "#CD7054",
+  "Megakaryocytes" = "#4a0221",
+  "NK" = "#bf812d",
+  "Osteoclast" = "#DEB887",
+  "T-cells" = "#40E0D0",
+  "Thymocyte" = "#74c476",
+  "Progenitors" = "#df65b0"
 )
 
 # Remap to cleaner group names
@@ -57,9 +58,9 @@ group_remap <- c(
 )
 
 # Paths
-plot_dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/figures/blueprint/"
+plot_dir <- "/icbb/projects/nitschre/methylTFR/figures/blueprint/PCA/"
 if (!dir.exists(plot_dir)) dir.create(plot_dir)
-deviations <- readRDS("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/mTFR_devs_121125/jaspar2020_distal_deviations.RDS")
+deviations <- readRDS("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/mTFR_devs_121125/JASPAR2020_distal_deviations.RDS")
 deviations <- deviations(deviations)
 sannot <- read.csv("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/RnBeads_291025/reports/data_import_data/annotation.csv", stringsAsFactors = FALSE)
 
