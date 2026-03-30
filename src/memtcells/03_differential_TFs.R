@@ -4,13 +4,11 @@
 # 03_differential_TFs.R
 # Created on 27-10-25 by IBG
 # Identify differential TFs from methylTFR analysis and
-# TF activity analysis based on gene expression data with dorothea/viper
+# TF activity analysis based on gene expression data 
 #####################################################################
 
 # load libraries
 suppressPackageStartupMessages({
-  library(dorothea)
-  library(viper)
   library(dplyr)
   library(ComplexHeatmap)
   library(org.Hs.eg.db)
@@ -57,7 +55,7 @@ diff_em <- differential_deviation_test(deviations_em,
 saveRDS(diff_em, file = file.path(mem_tcell, "diff_em_jaspar2020.RDS"))
 
 # Filter for pval < .05 and mean difference > 0.2
-diff_em_filtered <-diff_em[abs(diff_em[,"mean_difference"]) > cut_mean_diff & diff_em[,"p_value_adjusted"] < cut_padj,]
+diff_em_filtered <- diff_em[abs(diff_em[,"mean_difference"]) > cut_mean_diff & diff_em[,"p_value_adjusted"] < cut_padj,]
 
 ### CM vs TN
 # Subsetting deviations matrix to only naive and CM cells
@@ -93,7 +91,7 @@ top50cm <- diff_cm_filtered %>%
   slice_head(n = 50)
   
 zscores_filtered_top50 <- zscores[rownames(zscores) %in% c(rownames(top50em), rownames(top50cm)), ]
-saveRDS(zscores_filtered, file = file.path(mem_tcell, "zscores_diffmotifs_top50_jaspar2020.RDS"))
+saveRDS(zscores_filtered_top50, file = file.path(mem_tcell, "zscores_diffmotifs_top50_jaspar2020.RDS"))
 
 #########################################################################
 # TF activity from gene expression data
@@ -154,6 +152,7 @@ saveRDS(expr, file = file.path(mem_tcell, "expr_tf_activity_memTcells.RDS"))
 ### Heatmap containing differential Tfs from mtfr
 mtfr_tfs <- readRDS(file.path(mem_tcell, "zscores_diffmotifs_top50_jaspar2020.RDS"))
 expr_activity_filtered <- expr[rownames(expr) %in% rownames(mtfr_tfs), ]
+mtfr_tfs <- mtfr_tfs[rownames(mtfr_tfs) %in% rownames(expr_activity_filtered), ]
 
 # Change sample names
 colnames(expr_activity_filtered) <- c("Hf03_CM", "Hf03_EM", "Hf03_TN", "Hf04_CM", "Hf04_EM", "Hf04_TN")
@@ -166,7 +165,7 @@ ha <- HeatmapAnnotation(
   col = list(celltypes = c("TN" = "#C8E0B4", "CM" = "#4492C6", "EM" = "#43B6C4"))
 )
 
-path <- file.path(plot_dir, "expr_tf_activity_memTcells_mtfr_tfs.pdf")
+path <- file.path(plot_dir, "expr_tf_activity_memTcells_mtfr_tfs2.pdf")
 col_fun <- colorRamp2(
   seq(-2, 2, length.out = 70),
   viridis(70)

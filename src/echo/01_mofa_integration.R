@@ -175,7 +175,7 @@ p_modality_frac <- ggplot(agg, aes(x = factor, y = frac, fill = view)) +
     position = position_stack(vjust = 0.5), size = 3
   ) +
   scale_y_continuous(labels = percent_format(accuracy = 1)) +
-  scale_fill_viridis_d(option = "C") +
+  scale_fill_manual(values = c("#ED4B4A", "#6BC75A")) +
   labs(
     x = "Factor", y = "Relative contribution (|weights| fraction)", fill = "View",
     title = "Modality contribution per factor (weights-based)"
@@ -192,7 +192,7 @@ p_modality_abs <- ggplot(agg, aes(x = factor, y = sum_abs, fill = view)) +
   geom_bar(stat = "identity", position = position_dodge(width = 0.8)) +
   geom_text(aes(label = round(sum_abs, 1)), position = position_dodge(width = 0.8), vjust = -0.5, size = 3) +
   scale_y_continuous(trans = "log10", labels = scales::comma_format()) +
-  scale_fill_viridis_d(option = "C") +
+  scale_fill_manual(values = c("#ED4B4A", "#6BC75A")) +
   labs(
     x = "Factor", y = "Sum of |weights| (log10 scale)", fill = "View",
     title = "Absolute modality contribution per factor (sum |weights|)"
