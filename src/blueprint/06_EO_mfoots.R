@@ -89,8 +89,9 @@ plot_and_save_difference <- function(samples, save_dir, obs_colors) {
         flankNorm= 50
         flank <- max(abs(difference_data$x), na.rm = TRUE)
         idx <- abs(difference_data$x) >= flank - flankNorm
-        norm_factor <- mean(difference_data$avg_methyl[idx], na.rm = TRUE)
-        difference_data[, avg_methyl := avg_methyl / norm_factor]
+        norm_factor_exp <- mean(subset(difference_data[idx],type %in% c("Expected_Bcell", "Expected_Tcell"))$avg_methyl, na.rm = TRUE)
+        norm_factor_obs <- mean(subset(difference_data[idx],type %in% c("Observed_Bcell", "Observed_Tcell"))$avg_methyl, na.rm = TRUE)
+        difference_data[, avg_methyl := avg_methyl / ifelse(grepl("Expected", type), norm_factor_exp, norm_factor_obs)]
 
         return(difference_data)
       })) 
