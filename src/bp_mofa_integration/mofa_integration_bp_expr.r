@@ -22,6 +22,8 @@ library(RColorBrewer)
 
 set.seed(12)
 
+source("/icbb/projects/nitschre/methylTFR/scripts/other/helpers.R")
+
 # Define custom colors for cell types
 cell_type_colors <- c(
   "Bcell" = "#980043",
@@ -385,8 +387,11 @@ ha <- HeatmapAnnotation(
   celltypes=colnames(mtfr_filtered),
   col = list(celltypes = cell_type_colors
 ))
+# Column order
+column_order <- c("megK", "eryt", "gran", "mono", "Mf", "DC", "osteoclast", "NK", "Tcell", "thymocyte", "Bcell", "plasma", "other")
+
 # Column groups
-column_split_factor <- factor(groups, levels = unique(groups))
+column_split_factor <- factor(groups, levels = column_order)
 
 # MTFR
 p<-Heatmap(
@@ -397,7 +402,7 @@ p<-Heatmap(
   show_row_names = TRUE,
   show_column_names = FALSE,
   column_split = column_split_factor, # Split columns by the desired order
-  cluster_column_slices = FALSE, # Prevent clustering of the groups themselves)
+  cluster_column_slices = FALSE # Prevent clustering of the groups themselves)
 )
 pdf(file.path(plot_dir, "mofa_mtfr_bp.pdf"))
 draw(p)
