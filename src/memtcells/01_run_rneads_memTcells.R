@@ -57,7 +57,7 @@ rnb.options(
   import.bed.style = "BisSNP",
   filtering.sex.chromosomes.removal = TRUE,
   identifiers.column = "bedFile",
-  differential.comparison.columns.all.pairwise = "cellType" #
+  differential.comparison.columns.all.pairwise = "cellType" 
 )
 
 # Multiprocess

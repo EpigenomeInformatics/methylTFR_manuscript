@@ -243,7 +243,7 @@ ht <- draw(hm)
 dev.off()
 
 #########################################################################
-# Correlation between methylTFR and VIPER TF activity
+# Correlation between methylTFR and rna TF activity
 #########################################################################
 
 # Sort to match the order of methylTFR

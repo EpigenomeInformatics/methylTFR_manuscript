@@ -323,4 +323,216 @@ ggsave(
   filename = file.path(plot_dir, "BATF_chromVar_vs_mtfr_scatter.pdf"),
   plot = p_data_scatter, width = 6, height = 5
 )
+
+# Barplot R2 values
+p <- ggplot(r2_df,aes(x=reorder(Factor, -R2), y=R2))+
+        geom_bar(stat="identity")+
+        theme_classic()+
+        ylim(0,1)+
+        labs(
+            title="R2 values of MOFA analysis",
+            x="Factors")+
+        theme(
+            axis.text.x = element_text(angle = 45, hjust = 1))
+ggsave(paste0(plot_dir, "barplots_R2.pdf"), p)
+
+# Factor value plot
+model <- load_model("/icbb/projects/nitschre/methylTFR/r_objects/model.hdf5")
+
+# Rename Tcells
+samples_metadata(model)$celltype <- case_when(
+    grepl("Naive", samples_metadata(model)$celltype) ~"T-naive",
+    grepl("Mem", samples_metadata(model)$celltype) ~ "T-mem",
+    TRUE ~ samples_metadata(model)$celltype
+    )
+
+# Top TFs for each modality
+weights <- get_weights(MOFAobject.trained, as.data.frame = TRUE)
+weights$value_abs <- abs(weights$value)
+
+topTfs <- data.frame(
+  feature = character(),
+  value = numeric(),
+  factor = character(),
+  view = character()
+)
+
+# Create DF with top  5 TFs for each factor and view
+for(f in r2_df$Factor[1:5]){
+  for(modality in unique(weights$view)){
+    df <- subset(weights, view == modality & factor == f)
+    df <- df[order(df$value_abs, decreasing = TRUE),]
+
+    new_df <- df[1:5, c("feature", "value", "factor", "view")]
+    new_df$feature <- gsub("_.*$", "", new_df$feature)
+
+    topTfs <- base::rbind(topTfs, new_df)
+  }
+}
+write.csv(topTfs, file.path(plot_dir, "topTFs.csv"), row.names=FALSE)
+
+
+#### Heatmap of TFs from integration
+# Filter for unique TFs
+mofaTFs <- unique(topTfs$feature)
+
+# Filter for only Mofa TFs that are present in mtfr and chromVar
+common_TFs <- Reduce(intersect, list(mofaTFs, rownames(mtfr), rownames(chromVar)))
+chromVar_filtered <- chromVar[common_TFs,]
+mtfr_filtered <- mtfr[common_TFs,]
+
+# Extract cell types 
+groups <- annot$cellTypeGroup
+
+# Change colnames
+colnames(mtfr_filtered) <- groups
+colnames(chromVar_filtered) <- groups
+
+# Plot
+path <- file.path(plot_dir, "heatmap_MofaTFs_mtfr.pdf")
+
+# Annotation
+ha <- HeatmapAnnotation(
+  celltypes=colnames(mtfr_filtered),
+  col = list(celltypes = cell_type_colors
+))
+
+# Column groups
+column_split_factor <- factor(groups, levels = unique(groups))
+
+# MTFR
+p<-Heatmap(
+  mtfr_filtered,
+  row_names_gp = gpar(fontsize = 4),
+  top_annotation = ha,
+  column_title = "mtfr Z-Scores of TFs from Mofa analysis",
+  show_row_names = TRUE,
+  show_column_names = FALSE,
+  column_split = column_split_factor, # Split columns by the desired order
+  cluster_column_slices = FALSE, # Prevent clustering of the groups themselves)
+)
+pdf(path)
+draw(p)
+dev.off()
+
+# Chromvar
+# Annotation
+ha <- HeatmapAnnotation(
+  celltypes=colnames(chromVar_filtered),
+  col = list(celltypes = cell_type_colors)
+)
+
+path <- file.path(plot_dir, "heatmap_MofaTFs_chromVar.pdf")
+
+# Get row order
+p <- draw(p)
+row_order_indices <- row_order(p)    
+
+# Set color scheme
+colors.cv <- ChrAccR::getConfigElement("colorSchemesCont")
+colors.cv <- colors.cv[[".default.div"]]
+c <- grDevices::colorRampPalette(colors.cv)(nrow(chromVar_filtered))
+
+col_fun <- colorRamp2(
+  seq(-5, 5, length.out = length(c)),
+  c
+)
+# Column groups
+column_split_factor <- factor(groups, levels = unique(groups))
+
+pdf(path)
+Heatmap(
+  chromVar_filtered,
+  row_names_gp = gpar(fontsize = 4),
+  top_annotation = ha,
+  column_title = "chromVar Z-Scores of TFs from Mofa analysis",
+  show_row_names = TRUE,
+  show_column_names = FALSE,
+  column_split = column_split_factor, # Split columns by the desired order
+  cluster_column_slices = FALSE, # Prevent clustering of the groups themselves),
+  row_order = row_order_indices,
+  col = col_fun)
+dev.off()
+
+# Calculate row-wise correlation
+row_correlation <- sapply(seq_len(nrow(mtfr_filtered)), function(i) {
+  cor(mtfr_filtered[i, ], chromVar_filtered[i, ]) # ), use = "complete.obs")  # Only use rows with complete observations
+})
+
+# Convert row-wise correlation vector to a matrix for heatmap plotting
+correlation_matrix <- as.matrix(row_correlation)
+rownames(correlation_matrix) <- rownames(mtfr_filtered) # Add row names for better interpretation
+
+# Create the heatmap
+cols <- colorRampPalette(brewer.pal(11,"PiYG"))(200)
+col_fun <- colorRamp2(
+  seq(-1, 1, length.out = length(cols)),
+  cols
+)
+
+cm <- Heatmap(
+  correlation_matrix,
+  name = "Correlation", # Name for the heatmap legend
+  cluster_rows = FALSE, # Cluster rows
+  show_row_names = TRUE, # Show row names
+  cluster_columns = FALSE, # No clustering for columns since it's a single column
+  col = col_fun,
+  row_order = row_order_indices,
+  heatmap_legend_param = list(title = "Row Correlation") # Legend settings
+)
+
+pdf(paste0(plot_dir, "correlation_heatmap.pdf"))
+draw(cm)
+dev.off()
+
+# Column with Factors
+#  Removing duplicates
+mofa_filt <- mofa[!duplicated(topTfs$feature),]
+
+# Set levels for each factor 
+levels <- levels(factor(mofa_filt$factor))
+level_col <- c("#331E36", "#41337A", "#6EA4BF", "#C2EFEB", "#ECFEE8")
+names(level_col) <- levels
+
+# Add col column
+mofa_filt$col <- level_col[mofa_filt$factor]
+
+# Order mofa df same as zscores_filtered/chromVar
+mofa_filt <- mofa_filt[match(row.names(mtfr_filtered), mofa_filt$TF),]
+
+path <- file.path(plot_dir, "factor_column.pdf")
+pdf(path, width=1.5)
+Heatmap(
+  mofa_filt$factor, column_names_gp = gpar(fontsize = 9),
+  cluster_rows = FALSE,
+  show_row_names = FALSE,
+  show_column_names = FALSE,
+  row_order = row_order_indices,
+  heatmap_legend_param = list(title = "Factors"),
+  col = level_col)
+dev.off()
+
+# Plot a correlation plots for all TFs
+for (motif in common_TFs){
+  chromVar_subs <- chromVar[motif,]
+  mtfr_subs <- mtfr[motif,]
+  data_scatter <- data.frame(
+    chromVar = chromVar_subs,
+    mtfr = mtfr_subs,
+    celltype = metadata$celltype
+)
+cor <- cor(data_scatter$chromVar, data_scatter$mtfr)
+
+p_data_scatter <- ggplot(data_scatter, aes(x = chromVar, y = mtfr, color = celltype)) +
+  geom_point() +
+  geom_smooth(method = "lm", color = "red", se = FALSE) +
+  scale_color_manual(values = cell_type_colors) +
+  theme_classic(base_size = 13) +
+  labs(caption = paste0("Cor. Coef.:",round(cor, 1))) +
+  theme(plot.caption = element_text(hjust = 0.5, size = 10))+
+  labs(title = paste0("TF Activity Correlation (chromVar vs mtfr) for ", motif))
+ggsave(filename = file.path(paste0(plot_dir,motif,"_chromVar_vs_mtfr_scatter.pdf")),
+ plot = p_data_scatter, width = 6, height = 5)
+}
+
 #####################################################################
