@@ -23,6 +23,7 @@ source("/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/s
 main.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/"
 sample_dir <- paste0(main.dir, "TB_RnBeads_271025/")
 debug <- paste0(main.dir, "debug/")
+
 if(!dir.exists(debug)){dir.create(debug)}
 plot_dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/figures/blueprint/"
 plot_dir <- paste0(plot_dir, "EO_mFoot/")
@@ -51,15 +52,17 @@ tf_bindsites <- getTFbindsites(motifSet)
 gc_dist <- getGenomeGC("hg38")
 
 # Define the TFs of interest
-tfs <-  c(
-  "SPIB", "SPI1","TFAP2B", "PAX5", "PAX9", "PAX1", "NHLH2", "ASCL1", "NHLH1", "BHLHE22", "FERD3L", "PAX6",
-  "EMX1", "PAX4", "EN1", "LHX1", "ELF4", "ELF2", "ETV5", "ETV6", "ELF5", "SPIC",
-   "EHF", "ELF3", "IKZF1", "TFAP2C", "TFAP2B", "TFAP2A", "TFAP2E", "TFAP2C",
-  "TGIF1", "CREB3L4", "PBX3", "TAL1::TCF3", "MYOG", "ATOH1", "MYF5", "BHLHA15", "ZBTB18", "EBF3",
-  "EBF1", "TFAP4", "NEUROD1", "VSX2", "EGR4", "DPRX", "SOX8", "CUX1", "CUX2", "TEAD3"
+tfs <- c(
+  "ASCL1", "BHLHE22", "CREB3L4", "CUX1", "CUX2", "DPRX", "EBF1", "EBF3", "EGR4", "EHF",
+  "ELF2", "ELF3", "ELF4", "ELF5", "EMX1", "EN1", "ETV5", "ETV6", "FERD3L", "IKZF1",
+  "LHX1", "MYF5", "MYOG", "NEUROD1", "NHLH1", "NHLH2", "PAX1", "PAX4", "PAX5", "PAX6",
+  "PAX9", "PBX3", "SOX8", "SPI1", "SPIB", "SPIC", "TAL1::TCF3", "TEAD3", "TFAP2A", 
+  "TFAP2B", "TFAP2C", "TFAP2E", "TFAP4", "TGIF1", "VSX2", "ZBTB18"
 )
+
 tf_bindsites <- tf_bindsites[names(tf_bindsites) %in% tfs]
 tf_bindsites <- tf_bindsites[sort(names(tf_bindsites))]
+
 distal <- readRDS("/icbb/projects/share/annotations/methylTFRAnnotationHg38/inst/extdata/distal_regions.RDS")
 distal <- if(motifSet == "JASPAR2020_distal"){distal}else{NULL}
 

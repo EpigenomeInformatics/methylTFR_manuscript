@@ -12,6 +12,7 @@ suppressPackageStartupMessages({
   library(data.table)
   library(dplyr)
   library(logger)
+  library(LOLA)
   library(muLogR)
   library(RnBeads)
 })
@@ -64,7 +65,7 @@ rnb.options(
   import.table.separator = "\t",
   region.aggregation = "sum",
   analyze.sites = FALSE,
-  region.types = c("tiling1kb", "distal", "promoters"),
+  region.types = c("tiling1kb", "distal"),
   import.default.data.type = "data.dir",
   import.bed.style = "EPP",
   disk.dump.big.matrices = TRUE,
@@ -101,6 +102,21 @@ if (!file.exists(paste0(report.dir, "/differential_methylation_data/differential
   diffMeth <- load.rnb.diffmeth(paste0(analysis.dir, "/reports/differential_methylation_data/differential_rnbDiffMeth/"))
 }
 
+# MA plots
+color_map <- c(
+  Bcell = "#2B4B9B",
+  Tcell = "#D76016"
+)
+plots <- rnbeadsDensityScatter(diffMeth, "distal", color_mapping=color_map)
+
+# Save all plots to files
+for (name in names(plots)) {
+    ggsave(filename = paste0(plot_path,name, "_scatterplot.pdf"), plot = plots[[name]])
+}
+
+#####################################################################
+# LOLA Analysis
+#######################################################################
 # Run LOLA for differential methylation data
 logger.start("Running LOLA")
 lolaDb_path <- "/icbb/projects/share/annotations/lolaDB/hg38/"
@@ -108,7 +124,7 @@ lolaDb_path <- "/icbb/projects/share/annotations/lolaDB/hg38/"
 # Run LOLA
 res <- performLolaEnrichment.diffMeth(rnb.set, diffMeth, lolaDb_path)
 logger.info("Saving results")
-saveRDS(res, paste0(analysis.dir, "/reports/differential_methylation_data/differential_rnbDiffMeth/lola_results_full.rds"))
+saveRDS(res, paste0(analysis.dir, "reports/differential_methylation_data/differential_rnbDiffMeth/lola_results.rds"))
 logger.completed()
 
 # Plot the LOLA results
@@ -116,10 +132,13 @@ source("/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/s
 # Plot Volcano plot
 comparisons <- names(res$region)
 outputDir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/figures/blueprint/"
-lolaVolcanoPlot(cell = NULL,
-        lolaDb = lolaDb,
+lolaVolcanoPlot(lolaRes = res,
         outputDir = outputDir,
         comparison = comparisons,
         region = "tiling1kb",
         database = "TF_motifs"
 )
+
+
+
+

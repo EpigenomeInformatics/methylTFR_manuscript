@@ -1,82 +1,75 @@
 #!/usr/bin/env Rscript
 
 #####################################################################
-# 07_mFoots.R
-# Created by IBG on 07-11-2025
-# Create methylation footprint plots for selected TFs
+# 04_plot_mfoot.R
+# created on 14-05-2025 by Irem Gunduz
+# Plotting the motif footprints for blueprint data
 #####################################################################
 
-set.seed(42)
 suppressPackageStartupMessages({
-  library(data.table)
-  library(dplyr)
-  library(methylTFR)
-  library(methylTFRAnnotationHg38)
-  library(logger)
-  library(GenomicRanges)
-  library(muLogR)
-  library(stringr)
-  library(RnBeads)
+    library(methylTFR)
+    library(RnBeads)
+    library(methylTFRAnnotationHg38)
+    library(dplyr)
 })
+set.seed(42)
 
-source("/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/src/run_mTFR_RnBeads.R", chdir = TRUE)
-main.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/"
-sample_dir <- paste0(main.dir, "TB_RnBeads_271025/")
-debug <- paste0(main.dir, "debug/")
-if(!dir.exists(debug)){dir.create(debug)}
-plot_dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/figures/blueprint/"
-plot_dir <- paste0(plot_dir, "mFoot_ND/")
-if(!dir.exists(plot_dir)){dir.create(plot_dir)}
+source("/icbb/projects/nitschre/methylTFR/scripts/memoryTcells/plots.R")
+source("/icbb/projects/nitschre/methylTFR/R/plot_helpers.R")
+source("/icbb/projects/nitschre/methylTFR/R/expected_deviations.R")
 
-if(!file.exists(paste0(debug, "methylation_sites_merged_GRangesList.rds"))){
+# Set the paths
+plot_dir <- "/icbb/projects/nitschre/methylTFR/figures/blueprint/TF_footprint_diffmotifs/"
+if (!dir.exists(plot_dir)) {
+    dir.create(plot_dir, recursive = TRUE)
+}
+data_dir <- "/icbb/projects/nitschre/methylTFR/r_objects/"
+if (!dir.exists(data_dir)) {
+    dir.create(data_dir, recursive = TRUE)
+}
 
-# Load RnBeads preprocessed data
-rnb_set <- RnBeads::load.rnb.set(paste0(sample_dir, "reports/data_import_data/rnb.set_preprocessed"))
-
+if(!file.exists(paste0(data_dir,"bp_msites.RDS"))){
+    # Import Rnbeads object
+rnbset <- load.rnb.set("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/RnBeads_291025/reports/data_import_data/rnb.set_preprocessed")
 # Merging cell type replicates
-rnbset_merged <- mergeSamples(rnb_set, "cellTypeGroup")
+rnbset_merged <- mergeSamples(rnbset, "cellTypeGroup")
 
 # Get the methylation sites as GRangesList
 msites <- rnb.RnBSet.to.GRangesList(rnbset_merged)
-saveRDS(msites, paste0(debug, "methylation_sites_merged_GRangesList.rds"))
-
+saveRDS(msites, file =paste0(data_dir,"bp_msites.RDS"))
 }else{
-    msites <- readRDS(paste0(debug, "methylation_sites_merged_GRangesList.rds"))
+msites <- readRDS(paste0(data_dir,"bp_msites.RDS"))
 }
+
+# Plot only NK, Tcells, mono and Bcell
+msites <- msites[c("Tcell", "NK","Bcell", "mono")]
 
 # Prepare motif data
 motifSet <- "JASPAR2020"
 gcfreqs <- getGCfreq("JASPAR2020_distal")
 tf_bindsites <- getTFbindsites(motifSet)
-gc_dist <- getGenomeGC("hg38")
+gc_dist <- getGenomeGC()
 
 # Define the TFs of interest
-tfs <-  c(
-  "TFAP2B", "PAX5", "PAX9", "PAX1", "NHLH2", "ASCL1", "NHLH1", "BHLHE22", "FERD3L", "PAX6",
-  "EMX1", "PAX4", "EN1", "LHX1", "ELF4", "ELF2", "ETV5", "ETV6", "ELF5", "SPIC",
-  "SPIB", "SPI1", "EHF", "ELF3", "IKZF1", "TFAP2C", "TFAP2B", "TFAP2A", "TFAP2E", "TFAP2C",
-  "TGIF1", "CREB3L4", "PBX3", "TAL1::TCF3", "MYOG", "ATOH1", "MYF5", "BHLHA15", "ZBTB18", "EBF3",
-  "EBF1", "TFAP4", "NEUROD1", "VSX2", "EGR4", "DPRX", "SOX8", "CUX1", "CUX2", "TEAD3"
+tfs <-  tfs <- c(
+  "CEBPA", "CEBPB", "IRF8", "KLF4", "RUNX1",    # Monocyte Specific
+  "EBF1", "PAX5", "TCF3", "POU2F2",             # B Cell Specific
+  "TBX21", "GATA3", "RORC", "FOXP3", "RUNX3",   # T Cell Specific
+  "LEF1", "TCF7",                               # T Cell Specific (cont.)
+  "SPI1", "BCL6"                                # Shared / Lineage
 )
+
 tf_bindsites <- tf_bindsites[names(tf_bindsites) %in% tfs]
 
-if(!file.exists("/icbb/projects/share/annotations/methylTFRAnnotationHg38/inst/extdata/distal_regions.RDS")){
-    distal <- fread("/icbb/projects/share/annotations/lolaDB/hg38/EnsemblRegBuildBP/regions/regionSet_1.bed", header = FALSE) 
-    distal$V6 <- str_replace(distal$V6, ".", "*")
-    distal <- GRanges(seqnames = distal$V1,
-                  ranges = IRanges(start = distal$V2, end = distal$V3), 
-                  strand = distal$V6)
-    saveRDS(distal, "/icbb/projects/share/annotations/methylTFRAnnotationHg38/inst/extdata/distal_regions.RDS")
-}else{
-    distal <- readRDS("/icbb/projects/share/annotations/methylTFRAnnotationHg38/inst/extdata/distal_regions.RDS")
-}
- 
+distal <- readRDS("/icbb/projects/share/annotations/methylTFRAnnotationHg38/inst/extdata/distal_regions.RDS")
+distal <- if(motifSet == "JASPAR2020_distal"){distal}else{NULL}
+
 # Function to generate and save a plot for all samples
-plot_and_save_difference <- function(samples, save_dir, obs_colors) {
+plot_and_save_difference_covid <- function(samples, save_dir, obs_colors) {
 
   for (motif in names(tf_bindsites)) {
     if (!file.exists(file.path(save_dir, paste0("TF_footprint_diff_", motif, ".pdf")))) {
-      logger.start(paste("Processing motif", motif, "for B and Tcell samples"))
+      logger.start(paste("Processing motif", motif, "for Blueprint cell samples"))
 
       # Generate plot data and calculate the difference
       combined_data <- rbindlist(lapply(names(samples), function(cell_type) {
@@ -95,7 +88,7 @@ plot_and_save_difference <- function(samples, save_dir, obs_colors) {
         difference_data[, type := paste("Observed divided Expected", cell_type)]
 
         # Now normalize the ratio by flanking region
-        flankNorm <- 50
+        flankNorm= 50
         flank <- max(abs(difference_data$x), na.rm = TRUE)
         idx <- abs(difference_data$x) >= flank - flankNorm
         norm_factor <- mean(difference_data$avg_methyl[idx], na.rm = TRUE)
@@ -128,14 +121,15 @@ plot_and_save_difference <- function(samples, save_dir, obs_colors) {
   }
 }
 
-# Define the observed colors for TB samples
+# Define the observed colors for CD4T samples
 obs_colors <- c(
-  "Observed divided Expected Bcell" = "#2C4C9B",
-  "Observed divided Expected Tcell" = "#D66117"
+  "Observed divided Expected Bcell" = "#980043",
+  "Observed divided Expected mono" = "#CD7054",
+  "Observed divided Expected NK" = "#bf812d",
+  "Observed divided Expected Tcell" = "#40E0D0"
 )
 
-
 # Generate and save plots for all samples with observed divided expected
-plot_and_save_difference(msites, plot_dir, obs_colors)
+plot_and_save_difference_covid(msites, plot_dir, obs_colors)
 
 #####################################################################

@@ -1,9 +1,11 @@
 lolaVolcanoPlot <- function(lolaRes,outputDir,comparison,region,
 database = "TF_motif_clusters",signifCol = "qValue"){
 
-df <- res$region[[comparison]][[region]]
-df <- df[df$userSet %in% c("rankCut_1000_hyper","rankCut_1000_hypo"), ]
-df$condition <- ifelse(df$userSet == "rankCut_1000_hyper","gain","loss")
+df <- lolaRes$region[[comparison]][[region]] %>%
+  dplyr::filter(collection == database) %>%
+  dplyr::filter(userSet %in% c("rankCut_1000_hyper","rankCut_1000_hypo")) %>%
+  dplyr::mutate(condition = ifelse(userSet == "rankCut_1000_hyper","gain","loss"))
+  
   if (signifCol == "qValue") {
     signifCol <- "qValueLog"
     df$qValueLog <- -log10(df$qValue)
