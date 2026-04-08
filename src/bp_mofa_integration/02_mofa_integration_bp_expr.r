@@ -468,7 +468,7 @@ Heatmap(
   col = level_col)
 dev.off()
 
-# Correlation plots for all tfs
+# Correlation plots for all Tfs
 for (motif in common_TFs){
   rna_subs <- rna[motif,]
   mtfr_subs <- mtfr[motif,]
