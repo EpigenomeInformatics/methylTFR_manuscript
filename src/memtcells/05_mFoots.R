@@ -58,8 +58,8 @@ distal <- if(motifSet == "JASPAR2020_distal"){distal}else{NULL}
 
 
 # Define the TFs of interest
-tfs <- c("JUN","RELB", "FOS","FOXP2", "BATF", "IRF4", "SP1", "FOSL2")
-tf_bindsites <- tf_bindsites[tfs]
+tfs <- c("JUN","RELB", "FOS","FOXP2", "BATF", "IRF4", "SP1", "FOSL2", "RUNX3", "ETV1", "ETV2", "SPIB", "CENBP")
+tf_bindsites <- tf_bindsites[names(tf_bindsites) %in% tfs]
 
 
 # Function to generate and save a plot for all samples
@@ -67,7 +67,7 @@ plot_and_save_difference <- function(samples, save_dir, obs_colors) {
 
   for (motif in names(tf_bindsites)) {
     if (!file.exists(file.path(save_dir, paste0("TF_footprint_diff_", motif, ".pdf")))) {
-      logger.start(paste("Processing motif", motif, "for B and Tcell samples"))
+      logger.start(paste("Processing motif", motif, "for memTcell samples"))
 
       # Generate plot data and calculate the difference
       combined_data <- rbindlist(lapply(names(samples), function(cell_type) {
