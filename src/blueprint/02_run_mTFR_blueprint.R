@@ -19,6 +19,8 @@ suppressPackageStartupMessages({
   library(RnBeads)
 })
 source("/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/src/run_mTFR_RnBeads.R", chdir = TRUE)
+# source("/icbb/projects/nitschre/methylTFR/methylTFR_manuscript/src/run_mTFR_RnBeads_noCorrection.R", chdir = TRUE) For no correction
+
 motifSetList <- c("JASPAR2020_distal", "JASPAR2020")
 main.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/"
 sample_dir <- paste0(main.dir, "RnBeads_291025/")

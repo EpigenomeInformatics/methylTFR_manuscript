@@ -175,18 +175,6 @@ top_factors <- head(r2_df$Factor, 7)
 r2_long <- r2_long %>% filter(view %in% top_factors)
 r2_long$factor <- factor(r2_long$view, levels = top_factors)
 
-# Plot
-pvar <- ggplot(r2_long, aes(x = factor, y = r2, fill = view)) +
-  geom_bar(stat = "identity", position = "stack") +
-  scale_y_continuous(labels = percent_format(accuracy = 1)) +
-  scale_fill_viridis_d(option = "C") +
-  labs(x = "Factor", y = "Variance explained (R²)", fill = "View",
-       title = "Variance explained per factor by view (top factors)") +
-  theme_classic(base_size = 12)
-
-ggsave(filename = file.path(plot_dir, "variance_explained_topFactors.pdf"), plot = pvar,
-       width = 8, height = 4)
-
 # Get weights and prepare modality contribution plots
 weights_df <- get_weights(MOFAobject.trained, as.data.frame = TRUE)
 weights_df <- weights_df %>% mutate(value_abs = abs(value), value_signed = value)
@@ -216,55 +204,6 @@ p_modality_frac <- ggplot(agg, aes(x = factor, y = frac, fill = view)) +
 ggsave(filename = file.path(plot_dir, "mtfr_modality_contribution_fraction_topFactors.pdf"), plot = p_modality_frac,
        width = 8, height = 4)
 
-# Also plot absolute sums (dodged), with optional log-scale if large dynamic range
-p_modality_abs <- ggplot(agg, aes(x = factor, y = sum_abs, fill = view)) +
-  geom_bar(stat = "identity", position = position_dodge(width = 0.8)) +
-  geom_text(aes(label = round(sum_abs, 1)), position = position_dodge(width = 0.8), vjust = -0.5, size = 3) +
-  scale_y_continuous(trans = "log10", labels = scales::comma_format()) +
-  scale_fill_manual(values =  c("#ED4B4A", "#6BC75A")) +
-  labs(x = "Factor", y = "Sum of |weights| (log10 scale)", fill = "View",
-       title = "Absolute modality contribution per factor (sum |weights|)") +
-  theme_classic(base_size = 12)
-
-ggsave(filename = file.path(plot_dir, "modality_contribution_expr_abs_topFactors_log.pdf"), plot = p_modality_abs,
-       width = 9, height = 4)
-
-# Top TF dotplot (signed + magnitude)
-dot_topN <- 6
-top_by_factor <- weights_df %>%
-  group_by(factor) %>%
-  arrange(desc(value_abs)) %>%
-  slice_head(n = dot_topN) %>%
-  ungroup() %>%
-  mutate(feature = factor(feature, levels = unique(feature)))
-
-p_dot <- ggplot(top_by_factor, aes(x = factor, y = feature, size = value_abs, color = value_signed)) +
-  geom_point(alpha = 0.9) +
-  scale_color_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0, limits = c(min(top_by_factor$value_signed), max(top_by_factor$value_signed))) +
-  scale_size_continuous(range = c(2, 6)) +
-  labs(x = "Factor", y = "TF (feature)", color = "Signed weight", size = "|weight|",
-       title = paste0("Top ", dot_topN, " TFs per factor (signed weights)")) +
-  theme_classic(base_size = 11) +
-  theme(axis.text.y = element_text(size = 8))
-
-ggsave(filename = file.path(plot_dir, "topTFs_dotplot_signed.pdf"), plot = p_dot, width = 10, height = 6)
-
-# Combine panels into a single figure for main text (example)
-# Use p_factors_scatter, p_modality_frac, p_variance_expl, p_dot
-combined_fig <- (p_factors_scatter + p_modality_frac) / (p_variance_expl + p_dot) + plot_annotation(tag_levels = "A")
-ggsave(filename = file.path(plot_dir, "figure_combined_panels.pdf"), plot = combined_fig, width = 12, height = 10)
-
-# Save intermediate tables for reproducibility
-write.csv(agg, file.path(plot_dir, "modality_contribution_by_factor.csv"), row.names = FALSE)
-write.csv(weights_df, file.path(plot_dir, "MOFA_weights_long.csv"), row.names = FALSE)
-write.csv(r2_df, file.path(plot_dir, "factor_celltype_R2.csv"), row.names = FALSE)
-
-message("All done. Figures saved to: ", plot_dir, "  |  R objects / tables saved to: ", r_objects_dir)
-
-# Extract factors
-factors_long <- get_factors(MOFAobject.trained, as.data.frame = TRUE)
-factors_long$celltype <- metadata$celltype  # ensure metadata aligned
-
 # Filter to top factors (optional)
 #top_factors <- c("Factor1","Factor2","Factor3","Factor4","Factor7") 
 factors_long <- factors_long %>% filter(factor %in% top_factors)
@@ -283,44 +222,6 @@ p <- ggplot(factors_long, aes(x = factor, y = value, color = celltype)) +
 ggsave(filename = file.path(plot_dir, "factors_stripplot_by_celltype.pdf"), plot = p,
        width = 8, height = 5)
 
-# Total variance explained per view
-r2_per_factor_df <- get_variance_explained(MOFAobject.trained)$r2_per_factor$group1
-r2_per_factor_df <- as.data.frame(r2_per_factor_df)
-
-# Add Factor as a column
-r2_per_factor_df <- r2_per_factor_df %>%
-  rownames_to_column(var = "Factor")
-
-# Convert to long format and use fractions
-r2_long <- r2_per_factor_df %>%
-  pivot_longer(cols = -Factor, names_to = "View", values_to = "R2_percent") %>%
-  mutate(R2_fraction = R2_percent / 100)
-
-r2_long <- r2_long[r2_long$Factor != "Factor1",]
-# Filter for the top factors (e.g., Factor 1-7, where contribution drops off)
-top_n_factors <- 7
-top_factors_levels <- paste0("Factor", 1:top_n_factors)
-
-r2_long_top <- r2_long %>%
-  filter(Factor %in% top_factors_levels) %>%
-  mutate(Factor = factor(Factor, levels = top_factors_levels))
-
-# Define custom colors for the views
-view_colors <- c("green", "blue")
-
-# Plot 2: Variance Explained per Factor by View
-
-pvar_per_factor <- ggplot(r2_long_top, aes(x = Factor, y = R2_fraction, fill = View)) +
-  geom_bar(stat = "identity", position = "dodge") +  # Use dodge for side-by-side bars
-  scale_y_continuous(labels = percent_format(accuracy = 1)) +
-  scale_fill_manual(values = view_colors) +  # Use custom green and blue colors
-  labs(x = "Factor", y = "Variance Explained (R²)", fill = "View",
-       title = paste0("Variance Explained per Factor by View (Top ", top_n_factors, " Factors)")) +
-  theme_classic(base_size = 14)
-
-ggsave(filename = file.path(plot_dir, "variance_explained_per_factor_topFactors.pdf"), plot = pvar_per_factor,
-       width = 9, height = 5)
-lot = p_data_scatter, width = 6, height = 5)
 
 # Top TFs for each modality
 weights <- get_weights(MOFAobject.trained, as.data.frame = TRUE)
@@ -468,29 +369,6 @@ Heatmap(
   col = level_col)
 dev.off()
 
-# Correlation plots for all Tfs
-for (motif in common_TFs){
-  rna_subs <- rna[motif,]
-  mtfr_subs <- mtfr[motif,]
-  data_scatter <- data.frame(
-    rna = rna_subs,
-    mtfr = mtfr_subs,
-    celltype = metadata$celltype
-)
-cor <- cor(data_scatter$rna, data_scatter$mtfr)
-
-p_data_scatter <- ggplot(data_scatter, aes(x = rna, y = mtfr, color = celltype)) +
-  geom_point() +
-  geom_smooth(method = "lm", color = "red", se = FALSE) +
-  scale_color_manual(values = cell_type_colors) +
-  theme_classic(base_size = 13) +
-  labs(caption = paste0("Cor. Coef.:",round(cor, 2))) +
-  theme(plot.caption = element_text(hjust = 0.5, size = 10))+
-  labs(title = paste0("TF Activity Correlation (rna vs mtfr) for ", motif))
-ggsave(filename = file.path(paste0(plot_dir,"scatterplots/",motif,"_rna_vs_mtfr_scatter.pdf")),
- plot = p_data_scatter, width = 6, height = 5)
-}
-
 # Barplot R2 values
 p <- ggplot(r2_df,aes(x=reorder(Factor, -R2), y=R2))+
         geom_bar(stat="identity")+
@@ -502,3 +380,12 @@ p <- ggplot(r2_df,aes(x=reorder(Factor, -R2), y=R2))+
         theme(
             axis.text.x = element_text(angle = 45, hjust = 1))
 ggsave(paste0(plot_dir, "barplots_R2.pdf"), p)
+
+
+# Save intermediate tables for reproducibility
+write.csv(agg, file.path(plot_dir, "modality_contribution_by_factor.csv"), row.names = FALSE)
+write.csv(weights_df, file.path(plot_dir, "MOFA_weights_long.csv"), row.names = FALSE)
+write.csv(r2_df, file.path(plot_dir, "factor_celltype_R2.csv"), row.names = FALSE)
+
+message("All done. Figures saved to: ", plot_dir, "  |  R objects / tables saved to: ", r_objects_dir)
+

@@ -63,7 +63,10 @@ if (!dir.exists(plot_dir)) dir.create(plot_dir)
 
 # Load data
 deviations <- readRDS("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/mTFR_devs_121125/JASPAR2020_distal_deviations.RDS")
+deviations_noCorrection <- readRDS("/icbb/projects/nitschre/methylTFR/r_objects/JASPAR2020_distal_deviations_bp_noCorrection.RDS")
 deviations <- deviations(deviations)
+deviations_noCorrection <- deviations(deviations_noCorrection)
+
 sannot <- read.csv("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/RnBeads_291025/reports/data_import_data/annotation.csv", stringsAsFactors = FALSE)
 
 # Ensure consistent character types
@@ -102,26 +105,38 @@ dev.off()
 #####################################################################
 # mTFR scores PCA
 #####################################################################
-# Apply PCA
-tdf <- as.data.frame(t(deviations))
-pca_result <- prcomp(tdf, center = FALSE, scale. = FALSE)
-tdf$groups <- cell_types
+deviations_list <- list(
+  "PCA_deviations_blueprint" = deviations,
+  "PCA_deviations_blueprint_noCorrection" = deviations_noCorrection
+)
 
-# Apply remap
-tdf$groups <- group_remap[tdf$groups]
+# PCA for both corrected and uncorrected deviations
+lapply(names(deviations_list), function(name){
+  deviations <- deviations_list[[name]]
+  
+  # Apply PCA
+  tdf <- as.data.frame(t(deviations))
+  pca_result <- prcomp(tdf, center = FALSE, scale. = FALSE)
+  tdf$groups <- cell_types
 
-fig_path <- paste0(plot_dir, "PCA_deviations_blueprint.pdf")
-pdf(fig_path, width = 10, height = 10)
-autoplot(pca_result,
-  data = tdf,
-  colour = "groups",
-  main = "PCA",
-  size = 5
-) +
-  theme_classic() +
-  scale_color_manual(values = cell_type_colors) +
-  theme(legend.position = "bottom")
-dev.off()
+  # Apply remap
+  tdf$groups <- group_remap[tdf$groups]
+
+  # Plot
+  fig_path <- paste0(plot_dir, name, ".pdf")
+  pdf(fig_path, width = 10, height = 10)
+  p <- autoplot(pca_result,
+      data = tdf,
+      colour = "groups",
+      main = "PCA",
+      size = 5
+    ) +
+      theme_classic() +
+      scale_color_manual(values = cell_type_colors) +
+      theme(legend.position = "bottom")
+  print(p)
+  dev.off()
+})
 
 #####################################################################
 # tiling and distal PCAs
