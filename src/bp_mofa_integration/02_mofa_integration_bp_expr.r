@@ -100,16 +100,23 @@ model_opts$num_factors <- 14
 
 # Prepare and train MOFA (save HDF5)
 MOFAobject <- prepare_mofa(MOFAobject, model_options = model_opts)
-outfile <- file.path(r_objects_dir, "mtfr_expr_model.hdf5")
+outfile <- file.path(r_objects_dir, "mtfr_expr_model_bp.hdf5")
 
 # If model file exists, load trained object; otherwise run training
 if(file.exists(outfile)){
   MOFAobject.trained <- load_model(outfile)
 } else {
   MOFAobject.trained <- run_mofa(MOFAobject, outfile, use_basilisk = TRUE)
-  saveRDS(MOFAobject.trained, file.path(r_objects_dir, "mtfr_expr_model.hdf5_bp.rds"))
+  saveRDS(MOFAobject.trained, file.path(r_objects_dir, "mtfr_expr_model_bp.hdf5"))
 
 }
+
+# Remove sample "others"
+metadata <- samples_metadata(MOFAobject.trained)
+metadata <- metadata[metadata$celltype != "other",]
+samples_to_keep <- metadata$sample
+MOFAobject.trained <- subset_samples(MOFAobject.trained, samples_to_keep)
+
 
 # Extract factors and compute ANOVA R2 for celltype
 factors_long <- get_factors(MOFAobject.trained, as.data.frame = TRUE)
@@ -129,6 +136,7 @@ for(fa in unique(factors_long$factor)){
 r2_df <- r2_df %>% arrange(desc(R2))
 write.csv(r2_df, file.path(plot_dir, "r2Values_bp.csv"), row.names = FALSE)
 
+
 # Choose top factors (by R2) for plotting
 r2_df <- r2_df[r2_df$Factor!="Factor1",] # Remove Factor 1 because it is highly correlated with total numbers of expressed features
 top_n <- 7
@@ -136,7 +144,8 @@ top_factors <- head(r2_df$Factor, top_n)
 
 # Plot 1: Factor scatter (example F1 vs F2) colored by celltype
 factors_wide <- factors_long %>%
-  pivot_wider(names_from = factor, values_from = value)
+  pivot_wider(names_from = factor, values_from = value) %>%
+  subset(celltype != "other") # Remove "other" cell type for plotting
 
 # default pair: top two factors by R2 (if <2 fallback to 1,2)
 f_x <- ifelse(length(top_factors) >= 1, top_factors[1], "1")
@@ -206,7 +215,9 @@ ggsave(filename = file.path(plot_dir, "mtfr_modality_contribution_fraction_topFa
 
 # Filter to top factors (optional)
 #top_factors <- c("Factor1","Factor2","Factor3","Factor4","Factor7") 
-factors_long <- factors_long %>% filter(factor %in% top_factors)
+factors_long <- factors_long %>% 
+  filter(factor %in% top_factors) %>%
+  subset(celltype != "other") # Remove "other" cell type for plotting
 
 # Plot: strip / dot plot per factor
 factors_long$factor <- factor(factors_long$factor, levels = c("Factor3", "Factor8", "Factor2", "Factor6", "Factor12", "Factor7", "Factor5"))
@@ -264,13 +275,18 @@ groups <- annot$cellTypeGroup
 colnames(mtfr_filtered) <- groups
 colnames(rna_filtered) <- groups
 
+# Remove "other" sample
+mtfr_filtered <- mtfr_filtered[, colnames(mtfr_filtered) != "other"]
+rna_filtered <- rna_filtered[, colnames(rna_filtered) != "other"]
+groups <- groups[groups != "other"]
+
 # Annotation
 ha <- HeatmapAnnotation(
   celltypes=colnames(mtfr_filtered),
   col = list(celltypes = cell_type_colors
 ))
 # Column order
-column_order <- c("megK", "eryt", "gran", "mono", "Mf", "DC", "osteoclast", "NK", "Tcell", "thymocyte", "Bcell", "plasma", "other")
+column_order <- c("megK", "eryt", "gran", "mono", "Mf", "DC", "osteoclast", "NK", "Tcell", "thymocyte", "Bcell", "plasma")
 
 # Column groups
 column_split_factor <- factor(groups, levels = column_order)
@@ -379,7 +395,7 @@ p <- ggplot(r2_df,aes(x=reorder(Factor, -R2), y=R2))+
             x="Factors")+
         theme(
             axis.text.x = element_text(angle = 45, hjust = 1))
-ggsave(paste0(plot_dir, "barplots_R2.pdf"), p)
+ggsave(paste0(plot_dir, "barplots_R2_2.pdf"), p)
 
 
 # Save intermediate tables for reproducibility

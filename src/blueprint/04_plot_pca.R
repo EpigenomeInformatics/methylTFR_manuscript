@@ -24,7 +24,6 @@ cell_type_colors <- c(
   "B-cells" = "#980043",
   "Plasma" = "#CD2990",
   "DC" = "#EED5B7",
-  "Other" = "#8B8682",
   "Granulocytes" = "#ff7f50",
   "Erythrocytes" = "#67000d",
   "Mf" = "#864a38",
@@ -34,7 +33,7 @@ cell_type_colors <- c(
   "Osteoclast" = "#DEB887",
   "T-cells" = "#40E0D0",
   "Thymocyte" = "#74c476",
-  "Progenitors" = "#df65b0"
+  "Progenitors" = "#F4C3DA"
 )
 
 # Remap to cleaner group names
@@ -48,7 +47,6 @@ group_remap <- c(
   "mono" = "Monocytes",
   "NK" = "NK",
   "osteoclast" = "Osteoclast",
-  "other" = "Other",
   "plasma" = "Plasma",
   "progenitor" = "Progenitors",
   "Tcell" = "T-cells",
@@ -76,6 +74,11 @@ sample_names <- colnames(deviations)
 # Match and extract cellTypeGroup
 cell_types <- sannot$cellTypeGroup[match(sample_names, sannot$bedFile)]
 
+# Remove 'other' cell types
+rm <- which(cell_types == "other")
+deviations <- deviations[,-rm]
+deviations_noCorrection <- deviations_noCorrection[,-rm]
+cell_types <- cell_types[-rm]
 
 #####################################################################
 # Plot pie chart for cell types
@@ -87,7 +90,7 @@ sample_counts <- table(cell_types)
 names(sample_counts) <- group_remap[names(sample_counts)]
 
 # Cell order
-order <- c("Megakaryocytes", "Erythrocytes", "Granulocytes", "Monocytes", "Mf", "DC", "Osteoclast", "NK", "T-cells", "Thymocyte", "B-cells", "Plasma","Progenitors", "Other")
+order <- c("Megakaryocytes", "Erythrocytes", "Granulocytes", "Monocytes", "Mf", "DC", "Osteoclast", "NK", "T-cells", "Thymocyte", "B-cells", "Plasma","Progenitors")
 sample_counts <- sample_counts[order]
 cell_type_colors <- cell_type_colors[order]
 

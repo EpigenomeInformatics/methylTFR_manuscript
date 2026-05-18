@@ -10,7 +10,9 @@ suppressPackageStartupMessages({
   library(ComplexHeatmap)
   library(dplyr)
   library(circlize)
+  library(ggplot2)
 })
+
 
 set.seed(12)
 
@@ -28,7 +30,6 @@ cell_type_colors <- c(
   "Bcell" = "#980043",
   "plasma" = "#CD2990",
   "DC" = "#EED5B7",
-  "other" = "#8B8682",
   "gran" = "#ff7f50",
   "Mf" = "#864a38",
   "mono" = "#CD7054",
@@ -48,9 +49,11 @@ annot <- subset(annot, bedFile %in% colnames(deviations))
 
 deviations <- deviations[,match(annot$bedFile, colnames(deviations))]
 colnames(deviations) <- annot$cellTypeGroup
+deviations <-deviations[,!colnames(deviations) %in% c("other")]
 
 deviations_raw <- deviations_raw[,match(annot$bedFile, colnames(deviations_raw))] 
 colnames(deviations_raw) <- annot$cellTypeGroup 
+deviations_raw <-deviations_raw[,!colnames(deviations_raw) %in% c("other")]
 
 # Compute zscores columnwise
 zscores <- computeColZScore(deviations)
@@ -71,7 +74,7 @@ top50 <- var %>%
   head(50)
 
 # Keep only samples that have at least 5 samples
-deviations_raw_filtered <- deviations_raw[,colnames(deviations_raw) %in% c("plasma", "gran", "Bcell", "DC","Mf","mono","other","Tcell","thymocyte")]
+deviations_raw_filtered <- deviations_raw[,colnames(deviations_raw) %in% c("plasma", "gran", "Bcell", "DC","Mf","mono","Tcell","thymocyte")]
 
 # Get Z-scores
 zscores <- deviationZScores(deviations_raw_filtered)
@@ -89,7 +92,7 @@ ha <- HeatmapAnnotation(
 col <- muRtools::colpal.cont(100, "cptcity.arendal_temperature")
 
 # Column order 
-column_order <- c("megK", "eryt", "gran", "mono", "Mf", "DC", "osteoclast", "NK", "Tcell", "thymocyte", "Bcell", "plasma", "other")
+column_order <- c("megK", "eryt", "gran", "mono", "Mf", "DC", "osteoclast", "NK", "Tcell", "thymocyte", "Bcell", "plasma")
 
 # Column split factor
 group <- colnames(deviations_raw_filtered)
@@ -112,3 +115,10 @@ ht <- Heatmap(
 pdf(paste0(plot_dir, "heatmap_variable_TFs_bp.pdf"))
 draw(ht)
 dev.off()
+
+# Variability Rank Plot
+p <- plotVariability(var)
+pdf(paste0(plot_dir, "variability_rank_plot.pdf"))
+print(p)
+dev.off()
+
