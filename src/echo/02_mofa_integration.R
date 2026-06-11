@@ -15,6 +15,7 @@ suppressPackageStartupMessages({
   library(patchwork)
   library(ggrepel)
   library(scales)
+  library(ComplexHeatmap)
 })
 set.seed(12)
 
@@ -30,7 +31,7 @@ cell_type_colors <- c(
 )
 
 # Paths
-plot_dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/figures/echo/mofa_integration/"
+plot_dir <- "/icbb/projects/nitschre/methylTFR/figures/figure5"
 r_objects_dir <- "/icbb/projects/nitschre/methylTFR/r_objects/"
 dir.create(plot_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(r_objects_dir, recursive = TRUE, showWarnings = FALSE)
@@ -215,7 +216,7 @@ chromVar_filtered <- chromVar[common_TFs,]
 mtfr_filtered <- mtfr[common_TFs,]
 
 # Extract cell types 
-groups <- annot$cellTypeGroup
+groups <- sapply(strsplit(colnames(mtfr_filtered), "_"), `[`, 1)
 
 # Change colnames
 colnames(mtfr_filtered) <- groups
@@ -320,18 +321,18 @@ dev.off()
 
 # Column with Factors
 #  Removing duplicates
-mofa_filt <- mofa[!duplicated(topTfs$feature),]
+mofa_filt <- topTfs[!duplicated(topTfs$feature),]
 
 # Set levels for each factor 
 levels <- levels(factor(mofa_filt$factor))
-level_col <- c("#331E36", "#41337A", "#6EA4BF", "#C2EFEB", "#ECFEE8")
+level_col <- c("#E41A1C", "#4DAF4A", "#377EB8", "#FF7F00", "#984EA3")
 names(level_col) <- levels
 
 # Add col column
 mofa_filt$col <- level_col[mofa_filt$factor]
 
 # Order mofa df same as zscores_filtered/chromVar
-mofa_filt <- mofa_filt[match(row.names(mtfr_filtered), mofa_filt$TF),]
+mofa_filt <- mofa_filt[match(row.names(mtfr_filtered), mofa_filt$feature),]
 
 path <- file.path(plot_dir, "factor_column.pdf")
 pdf(path, width=1.5)
