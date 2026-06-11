@@ -428,8 +428,12 @@ em_merged_unique <- em_merged[ave(em_merged$qValue, em_merged$motifs, FUN = rank
 cm_merged <- merge(cm_diff, cm_lola, by = "motifs")
 cm_merged_unique <- cm_merged[ave(cm_merged$qValue, cm_merged$motifs, FUN = rank) == 1, ]
 
+# Correlation between log2OR and mean difference
+cor_em <- cor(em_merged_unique$log2OR, em_merged_unique$zdiff, method = "pearson", use = "complete.obs")
+cor_cm <- cor(cm_merged_unique$log2OR, cm_merged_unique$zdiff, method = "pearson", use = "complete.obs")
+
 # Plotting function
-plotlog2OR <- function(df){
+plotlog2OR <- function(df, cor_val) {
   x_max <- max(abs(df$log2OR), na.rm = TRUE)
   y_max <- max(abs(df$zdiff), na.rm = TRUE)
   
@@ -470,17 +474,18 @@ plotlog2OR <- function(df){
     )) +
     geom_text_repel(aes(label = motifs), size = 3.5, box.padding = 0.5, max.overlaps = 15) +
     geom_hline(yintercept = 0, linetype = "dotted", color = "black") +
-    geom_vline(xintercept = 0, linetype = "dotted", color = "black")
-  
+    geom_vline(xintercept = 0, linetype = "dotted", color = "black") +
+    annotate("text", x = 2, y = 2, label = paste0("Correlation: ", round(cor_val, 2)), hjust = 1, vjust = 1, size = 4)
+
   return(p)
 }
 
 # Plot for EM vs TN
-p_em <- plotlog2OR(em_merged_unique)
+p_em <- plotlog2OR(em_merged_unique, cor_em)
 ggsave(file.path(plot_dir, "lola_log2OR_vs_mtfr_meanDiff_em_vs_tn.pdf"), p_em, width = 8, height = 6)
 
 # Plot for CM vs TN
-p_cm <- plotlog2OR(cm_merged_unique)
+p_cm <- plotlog2OR(cm_merged_unique, cor_cm)
 ggsave(file.path(plot_dir, "lola_log2OR_vs_mtfr_meanDiff_cm_vs_tn.pdf"), p_cm, width = 8, height = 6)
 
 #########################################################################

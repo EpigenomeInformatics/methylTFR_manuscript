@@ -275,10 +275,10 @@ groups <- annot$cellTypeGroup
 colnames(mtfr_filtered) <- groups
 colnames(rna_filtered) <- groups
 
-# Remove "other" sample
-mtfr_filtered <- mtfr_filtered[, colnames(mtfr_filtered) != "other"]
-rna_filtered <- rna_filtered[, colnames(rna_filtered) != "other"]
-groups <- groups[groups != "other"]
+# Remove "other" sample + plasma
+mtfr_filtered <- mtfr_filtered[, !colnames(mtfr_filtered) %in% c("other", "plasma")]
+rna_filtered <- rna_filtered[, !colnames(rna_filtered) %in% c("other", "plasma")]
+groups <- groups[groups != "other" & groups != "plasma"]
 
 # Annotation
 ha <- HeatmapAnnotation(
@@ -286,7 +286,7 @@ ha <- HeatmapAnnotation(
   col = list(celltypes = cell_type_colors
 ))
 # Column order
-column_order <- c("megK", "eryt", "gran", "mono", "Mf", "DC", "osteoclast", "NK", "Tcell", "thymocyte", "Bcell", "plasma")
+column_order <- c("megK", "eryt", "gran", "mono", "Mf", "DC", "osteoclast", "NK", "Tcell", "thymocyte", "Bcell")
 
 # Column groups
 column_split_factor <- factor(groups, levels = column_order)
@@ -364,7 +364,7 @@ mofa_filt <- topTfs[!duplicated(topTfs$feature),]
 
 # Set levels for each factor 
 levels <- levels(factor(mofa_filt$factor))
-level_col <- c("#331E36", "#41337A", "#6EA4BF", "#C2EFEB", "#ECFEE8")
+level_col <- c("#E41A1C", "#4DAF4A", "#377EB8", "#FF7F00", "#984EA3")
 names(level_col) <- levels
 
 # Add col column
