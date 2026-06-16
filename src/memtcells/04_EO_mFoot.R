@@ -24,8 +24,9 @@ main.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/memoryTcells/"
 sample_dir <- paste0(main.dir, "reports/")
 debug <- paste0(main.dir, "debug/")
 if(!dir.exists(debug)){dir.create(debug)}
-plot_dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/figures/memtcells/"
-plot_dir <- paste0(plot_dir, "EO_mFoot/")
+#plot_dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/figures/memtcells/"
+plot_dir <- "/icbb/projects/nitschre/methylTFR/figures/memoryTcells/ExpectedVsObserved/"
+#plot_dir <- paste0(plot_dir, "EO_mFoot/")
 if(!dir.exists(plot_dir)){dir.create(plot_dir)}
 
 if(!file.exists(paste0(debug,"memoryTcells_msites.RDS"))){
@@ -53,8 +54,8 @@ distal <- if(motifSet == "JASPAR2020_distal"){distal}else{NULL}
 
 
 # Define the TFs of interest
-tfs <- c("JUN","RELB", "FOS","FOXP2", "BATF", "IRF4", "SP1", "FOSL2")
-tf_bindsites <- tf_bindsites[tfs]
+#tfs <- c("JUN","RELB", "FOS","FOXP2", "BATF", "IRF4", "SP1", "FOSL2")
+#tf_bindsites <- tf_bindsites[tfs]
 
 # Function to generate and save a plot for all samples
 plot_and_save_difference<- function(samples, save_dir, obs_colors) {
@@ -77,6 +78,14 @@ plot_and_save_difference<- function(samples, save_dir, obs_colors) {
         # Calculate observed methylation
         difference_data <- plot_data$plotDF
         difference_data[, type := paste(type, cell_type, sep= "_")]
+
+         # Now normalize the ratio by flanking region
+        flankNorm= 50
+        flank <- max(abs(difference_data$x), na.rm = TRUE)
+        idx <- abs(difference_data$x) >= flank - flankNorm
+        norm_factor_exp <- mean(subset(difference_data[idx],type %in% c("Expected_TCM", "Expected_TEM", "Expected_TN", "Expected_TEMRA"))$avg_methyl, na.rm = TRUE)
+        norm_factor_obs <- mean(subset(difference_data[idx],type %in% c("Observed_TCM", "Observed_TEM", "Observed_TN", "Observed_TEMRA"))$avg_methyl, na.rm = TRUE)
+        difference_data[, avg_methyl := avg_methyl / ifelse(grepl("Expected", type), norm_factor_exp, norm_factor_obs)]
 
         return(difference_data)
       })) 
