@@ -69,7 +69,7 @@ distal <- if(motifSet == "JASPAR2020_distal"){distal}else{NULL}
 # Function to generate and save a plot for all samples
 plot_and_save_difference <- function(samples, save_dir, obs_colors) {
   for (motif in names(tf_bindsites)) {
-    if (!file.exists(file.path(save_dir, paste0("TF_footprint_diff_", motif, "2.pdf")))) {
+    if (!file.exists(file.path(save_dir, paste0("TF_footprint_diff_", motif, ".pdf")))) {
       logger.start(paste("Processing motif", motif, "for B and Tcell samples"))
 
       # Generate plot data and calculate the difference
