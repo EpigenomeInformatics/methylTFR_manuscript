@@ -10,6 +10,7 @@ suppressPackageStartupMessages({
   library(dplyr)
   library(RnBeads)
   library(grid)
+  library(LOLA)
 })
 set.seed(12)
 source("/icbb/projects/nitschre/methylTFR/scripts/other/muScatter.R")
@@ -124,8 +125,8 @@ for(comparison in comparisons){
   }
 }
 # Volcano Plot
-source("/icbb/projects/nitschre/methylTFR/scripts/blueprint/lola.R")
-outputDir <- file.path("/icbb/projects/nitschre/methylTFR/results/memoryTcells/reports_lola/differential_methylation_data/differential_rnbDiffMeth/lola_results_tiling.rds")
+source("/icbb/projects/nitschre/methylTFR/scripts/memoryTcells/lola.R")
+outputDir <- file.path("/scratch/icbb/igunduz/methylTFR_manuscript/memoryTcells/reports/differential_methylation_data/differential_rnbDiffMeth/TF_motifs_lola.rds")
 
 # Load the LOLA database
 lolaDb <- loadRegionDB(lolaDb_path)
@@ -139,7 +140,7 @@ p <- lolaVolcanoPlotC19(cell = NULL,
         database = "TF_motifs"
 )
 sample <- sub(" \\(.*", "", comparison)
-ggsave(paste0("/icbb/projects/nitschre/methylTFR/figures/memoryTcells/LolaVolcanoPlot_tiling", "_", sample, ".pdf"), plot=p$plot)
+ggsave(paste0("/icbb/projects/nitschre/methylTFR/figures/memoryTcells/LolaVolcanoPlot2_", "_", sample, ".pdf"), plot=p$plot)
         
 }
 
