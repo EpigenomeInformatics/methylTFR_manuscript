@@ -385,6 +385,116 @@ Heatmap(
   col = level_col)
 dev.off()
 
+# SELEX annotation column
+selex <- read.csv("/icbb/projects/igunduz/exposure_atlas_manuscript/sample_annots/Selex_data.csv", skip = 20, header = 21, sep = ";")[, c(1, 2, 3, 4, 6)]
+motifs <- rownames(mtfr_filtered)
+table(motifs %in% selex$TF.name)
+
+# FALSE  TRUE
+#   24    19
+
+# Add a new annotation column based on selex$Call
+# Ensure the order of `motifs` matches the heatmap rows
+selex_annotation <- data.frame(
+  Call = ifelse(motifs %in% selex$TF.name,
+    selex$Call[match(motifs, selex$TF.name)],
+    "Inconclusive"
+  ) # Replace NA with "Inconclusive"
+)
+
+# Replace NA values with "Inconclusive"
+rownames(selex_annotation) <- motifs
+
+# Set levels for each call 
+levels <- levels(factor(selex_annotation$Call))
+level_col <- c("#CCCCCC", "#BDB76B", "#8B0000", "#008080")
+names(level_col) <- levels
+
+# Add col column
+selex_annotation$col <- level_col[selex_annotation$Call]
+
+# Order annotation df same as zscores_filtered/chromVar
+selex_annotation <- selex_annotation[match(row.names(mtfr_filtered), rownames(selex_annotation)),]
+
+path <- file.path(plot_dir, "selex_annotation_heatmap.pdf")
+pdf(path)
+Heatmap(
+  selex_annotation$Call, column_names_gp = gpar(fontsize = 9),
+  cluster_rows = FALSE,
+  show_column_names = FALSE,
+  row_order = row_order_indices,
+  heatmap_legend_param = list(title = "SELEX Call"), 
+  col = level_col,
+  width = unit(1, "cm"))
+dev.off()
+#######################################################################
+# Correlation plots for SELEX annotation
+#######################################################################
+
+# Sort to match the order of rna
+mtfr <- mtfr[rownames(rna), ]
+
+# Calculate row-wise correlation
+row_correlation <- sapply(seq_len(nrow(mtfr)), function(i) {
+  cor(mtfr[i, ], rna[i, ]) # ), use = "complete.obs")  # Only use rows with complete observations
+})
+
+# Convert to a data frame for better readability
+row_correlation_df <- data.frame(
+  TF.name = rownames(rna),
+  Correlation = row_correlation
+)
+
+# Add SELEX annotation and filter methylPlus and methylMinus
+row_correlation_df <- merge(row_correlation_df, selex, by = "TF.name")
+row_correlation_df <- row_correlation_df[row_correlation_df$methyl.SELEX.call %in% c("MethylPlus", "MethylMinus"), ]
+
+# Ensure row_correlation_df is a proper data frame
+row_correlation_df <- data.frame(row_correlation_df)
+
+# Count the number of motifs in each class using base R
+motif_counts <- as.data.frame(table(row_correlation_df$methyl.SELEX.call))
+colnames(motif_counts) <- c("methyl.SELEX.call", "count")
+
+
+# Create the boxplot with jittered points and annotations
+p <- ggplot(row_correlation_df, aes(x = methyl.SELEX.call, y = Correlation, fill = methyl.SELEX.call)) +
+  geom_boxplot(color = "black", outlier.shape = NA, width = 0.6) + # Boxplot without outliers
+  geom_jitter(aes(color = methyl.SELEX.call), width = 0.2, size = 1.5, alpha = 0.7) + # Add jittered points
+  scale_fill_manual(values = c("MethylPlus" = "darkgreen", "MethylMinus" = "darkred")) + # Custom colors for boxplot
+  scale_color_manual(values = c("MethylPlus" = "darkgreen", "MethylMinus" = "darkred")) + # Custom colors for points
+  scale_y_continuous(limits = c(-1, 1), breaks = seq(-1, 1, 0.2)) + # Set y-axis limits and breaks
+  # Add whisker caps
+  stat_boxplot(geom = "errorbar", width = 0.3, size = 0.8) + # Horizontal caps at whisker ends
+  labs(
+    x = "SELEX Group",
+    y = "Correlation"
+  ) +
+  theme_classic(base_size = 14) + # Use a larger base font size for readability
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"), # Center and bold the title
+    axis.title = element_text(face = "bold"), # Bold axis titles
+    legend.position = "none" # Remove legend if unnecessary
+  ) +
+  # Annotate the number of motifs in each class
+  geom_text(
+    data = motif_counts,
+    aes(x = methyl.SELEX.call, y = 1, label = count), # Position annotations above the boxplots
+    vjust = -0.5,
+    size = 4
+  )
+
+# Save the plot
+ggsave(
+  filename = paste0(plot_dir, "correlation_boxplot_with_caps.pdf"),
+  plot = p,
+  width = 8,
+  height = 6
+)
+
+#######################################################################
+
+
 # Barplot R2 values
 p <- ggplot(r2_df,aes(x=reorder(Factor, -R2), y=R2))+
         geom_bar(stat="identity")+
@@ -396,6 +506,7 @@ p <- ggplot(r2_df,aes(x=reorder(Factor, -R2), y=R2))+
         theme(
             axis.text.x = element_text(angle = 45, hjust = 1))
 ggsave(paste0(plot_dir, "barplots_R2_2.pdf"), p)
+
 
 
 # Save intermediate tables for reproducibility
