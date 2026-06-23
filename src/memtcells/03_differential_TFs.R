@@ -165,7 +165,7 @@ ha <- HeatmapAnnotation(
   col = list(celltypes = c("TN" = "#C8E0B4", "CM" = "#4492C6", "EM" = "#43B6C4"))
 )
 
-path <- file.path(plot_dir, "expr_tf_activity_memTcells_mtfr_tfs2.pdf")
+path <- file.path(plot_dir, "expr_tf_activity_memTcells_mtfr_tfs.pdf")
 col_fun <- colorRamp2(
   seq(-2, 2, length.out = 70),
   viridis(70)
@@ -394,8 +394,8 @@ em_diff <- group_means_em[, c("motifs", "zdiff","p_value_adjusted")]
 cm_diff <- group_means_cm[, c("motifs", "zdiff","p_value_adjusted")]
 
 # Get the LOLA enrichment results for TN/EM and TN/CM
-em_lola <- res_lola$region[[3]]$tiling
-cm_lola <- res_lola$region[[2]]$tiling
+em_lola <- res_lola$region[[3]]$distal
+cm_lola <- res_lola$region[[2]]$distal
 
 # Subset the userSet based on "rankCut_100_hyper" and, "rankCut_100_hypo"
 em_lola <- em_lola[em_lola$userSet %in% c("rankCut_1000_hyper", "rankCut_1000_hypo"), ]
@@ -463,7 +463,7 @@ plotlog2OR <- function(df, cor_val) {
       y = expression("Z-Score Difference (mTFR Activity)"),
       color = "Differential Status"
     ) +
-    scale_x_continuous(limits = c(-x_max, x_max)) +
+    scale_x_continuous(limits = c(-3, 3)) +
     scale_y_continuous(limits = c(-y_max, y_max)) +
     theme_classic(base_size = 14) +
     scale_color_manual(values = c(
@@ -472,7 +472,7 @@ plotlog2OR <- function(df, cor_val) {
       "LOLA differential" = "dodgerblue", 
       "Not differential" = "gray50"
     )) +
-    geom_text_repel(aes(label = motifs), size = 3.5, box.padding = 0.5, max.overlaps = 15) +
+    geom_text_repel(aes(label = motifs), size = 2, box.padding = 0.5, max.overlaps = Inf) +
     geom_hline(yintercept = 0, linetype = "dotted", color = "black") +
     geom_vline(xintercept = 0, linetype = "dotted", color = "black") +
     annotate("text", x = 2, y = 2, label = paste0("Correlation: ", round(cor_val, 2)), hjust = 1, vjust = 1, size = 4)
@@ -482,10 +482,10 @@ plotlog2OR <- function(df, cor_val) {
 
 # Plot for EM vs TN
 p_em <- plotlog2OR(em_merged_unique, cor_em)
-ggsave(file.path(plot_dir, "lola_log2OR_vs_mtfr_meanDiff_em_vs_tn.pdf"), p_em, width = 8, height = 6)
+ggsave(file.path(plot_dir, "lola_distal_log2OR_vs_mtfr_meanDiff_em_vs_tn.pdf"), p_em, width = 8, height = 6)
 
 # Plot for CM vs TN
 p_cm <- plotlog2OR(cm_merged_unique, cor_cm)
-ggsave(file.path(plot_dir, "lola_log2OR_vs_mtfr_meanDiff_cm_vs_tn.pdf"), p_cm, width = 8, height = 6)
+ggsave(file.path(plot_dir, "lola_distal_log2OR_vs_mtfr_meanDiff_cm_vs_tn.pdf"), p_cm, width = 8, height = 6)
 
 #########################################################################
