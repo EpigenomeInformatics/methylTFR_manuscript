@@ -7,26 +7,29 @@
 #####################################################################
 
 
-suppressPackageStartupMessages({
-    library(methylTFR)
-    library(RnBeads)
-    library(methylTFRAnnotationHg38)
-    library(dplyr)
-})
 set.seed(42)
-
-source("/icbb/projects/nitschre/methylTFR/scripts/memoryTcells/plots.R")
-source("/icbb/projects/nitschre/methylTFR/R/plot_helpers.R")
-source("/icbb/projects/nitschre/methylTFR/R/expected_deviations.R")
+suppressPackageStartupMessages({
+  library(data.table)
+  library(dplyr)
+  library(methylTFR)
+  library(methylTFRAnnotationHg38)
+  library(logger)
+  library(GenomicRanges)
+  library(muLogR)
+  library(stringr)
+  library(RnBeads)
+})
 
 # Set the paths
+source("/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/src/run_mTFR_RnBeads.R", chdir = TRUE)
 main.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/memoryTcells/"
 sample_dir <- paste0(main.dir, "reports/")
 debug <- paste0(main.dir, "debug/")
+
 if(!dir.exists(debug)){dir.create(debug)}
-#plot_dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/figures/memtcells/"
+plot_dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/figures/memtcells/"
 plot_dir <- "/icbb/projects/nitschre/methylTFR/figures/memoryTcells/ExpectedVsObserved/"
-#plot_dir <- paste0(plot_dir, "EO_mFoot/")
+plot_dir <- paste0(plot_dir, "EO_mFoot/")
 if(!dir.exists(plot_dir)){dir.create(plot_dir)}
 
 if(!file.exists(paste0(debug,"memoryTcells_msites.RDS"))){
@@ -34,29 +37,29 @@ if(!file.exists(paste0(debug,"memoryTcells_msites.RDS"))){
 rnb_set <- RnBeads::load.rnb.set(paste0(sample_dir, "data_import_data/rnb.set_preprocessed"))
 
 # Merging cell type replicates
-rnbset_merged <- mergeSamples(rnb_set, "cellType")
+rnbset_merged <- mergeSamples(rnb_set, "cellTypeGroup")
 
 # Get the methylation sites as GRangesList
 msites <- rnb.RnBSet.to.GRangesList(rnbset_merged)
 saveRDS(msites, file =paste0(debug,"memoryTcells_msites.RDS"))
 }else{
-msites <- readRDS(paste0(debug,"memoryTcells_msites.RDS"))
+  msites <- readRDS(paste0(debug,"memoryTcells_msites.RDS"))
 }
 
 # Load annotation files
 motifSet <- "JASPAR2020"
+gcfreqs <- getGCfreq("JASPAR2020_distal")
 tf_bindsites <- getTFbindsites(motifSet)
-motifSet <- "JASPAR2020_distal"
-gcfreqs <- getGCfreq(motifSet)
 gc_dist <- getGenomeGC("hg38")
-distal <- readRDS("/icbb/projects/share/annotations/methylTFRAnnotationHg38/inst/extdata/distal_regions.RDS")
-distal <- if(motifSet == "JASPAR2020_distal"){distal}else{NULL}
-
 
 # Define the TFs of interest
-#tfs <- c("JUN","RELB", "FOS","FOXP2", "BATF", "IRF4", "SP1", "FOSL2")
-#tf_bindsites <- tf_bindsites[tfs]
-tf_bindsites <- tf_bindsites[names(tf_bindsites) != "ZNF384"]
+tfs <- c("JUN","RELB", "FOS","FOXP2", "BATF", "IRF4", "SP1", "FOSL2")
+tf_bindsites <- tf_bindsites[names(tf_bindsites) %in% tfs]
+#tf_bindsites <- tf_bindsites[names(tf_bindsites) != "ZNF384"]
+
+
+distal <- readRDS("/icbb/projects/share/annotations/methylTFRAnnotationHg38/inst/extdata/distal_regions.RDS")
+distal <- if(motifSet == "JASPAR2020_distal"){distal}else{NULL}
 
 # Function to generate and save a plot for all samples
 plot_and_save_difference<- function(samples, save_dir, obs_colors) {
