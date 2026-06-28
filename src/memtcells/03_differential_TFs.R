@@ -424,9 +424,9 @@ cm_lola <- cm_lola[, c("motifs", "log2OR", "qValue")]
 
 # Merge with mTFR mean difference
 em_merged <- merge(em_diff, em_lola, by = "motifs")
-em_merged_unique <- em_merged[ave(em_merged$qValue, em_merged$motifs, FUN = rank) == 1, ]
+em_merged_unique <- em_merged[ave(em_merged$qValue, em_merged$motifs, FUN = function(x) rank(x, ties.method="first")) == 1, ]
 cm_merged <- merge(cm_diff, cm_lola, by = "motifs")
-cm_merged_unique <- cm_merged[ave(cm_merged$qValue, cm_merged$motifs, FUN = rank) == 1, ]
+cm_merged_unique <- cm_merged[ave(cm_merged$qValue, cm_merged$motifs, FUN = function(x) rank(x, ties.method="first")) == 1, ]
 
 # Correlation between log2OR and mean difference
 cor_em <- cor(em_merged_unique$log2OR, em_merged_unique$zdiff, method = "pearson", use = "complete.obs")
@@ -455,7 +455,7 @@ plotlog2OR <- function(df, cor_val) {
   ))
   
   p <- ggplot(df, aes(x = log2OR, y = zdiff, color = isDiff)) +
-    geom_point(alpha = 0.7, size = 3) +
+    geom_point(alpha = 0.5, size = 3) +
     
     labs(
       title = paste0("Motif Enrichment vs. Activity Difference"),
@@ -463,7 +463,7 @@ plotlog2OR <- function(df, cor_val) {
       y = expression("Z-Score Difference (mTFR Activity)"),
       color = "Differential Status"
     ) +
-    scale_x_continuous(limits = c(-3, 3)) +
+    scale_x_continuous(limits = c(-x_max, x_max)) +
     scale_y_continuous(limits = c(-y_max, y_max)) +
     theme_classic(base_size = 14) +
     scale_color_manual(values = c(
@@ -472,7 +472,8 @@ plotlog2OR <- function(df, cor_val) {
       "LOLA differential" = "dodgerblue", 
       "Not differential" = "gray50"
     )) +
-    geom_text_repel(aes(label = motifs), size = 2, box.padding = 0.5, max.overlaps = Inf) +
+    geom_text_repel(data=filter(df, isDiff == "Differential in both"), aes(label = motifs), size = 2, box.padding = 0.5, max.overlaps = Inf) +
+    geom_text_repel(data= filter(df, isDiff %in% c("mTFR differential", "LOLA differential")), aes(label = motifs), size = 2, box.padding = 0.5, max.overlaps = 30) +
     geom_hline(yintercept = 0, linetype = "dotted", color = "black") +
     geom_vline(xintercept = 0, linetype = "dotted", color = "black") +
     annotate("text", x = 2, y = 2, label = paste0("Correlation: ", round(cor_val, 2)), hjust = 1, vjust = 1, size = 4)
