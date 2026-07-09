@@ -30,8 +30,8 @@ table_dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manusc
 if (!dir.exists(fig_dir)) dir.create(fig_dir, recursive = TRUE)
 sannot <- read.csv("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/RnBeads_291025/reports/data_import_data/annotation.csv", stringsAsFactors = FALSE)
 # n_pc <- 20 # Replaced by dynamic selection
-var_threshold <- 0.95 # Use PCs explaining 90% of variance
-max_pc <- 15 # Set a maximum cap for number of PCs
+var_threshold <- 0.9 # Use PCs explaining 90% of variance
+max_pc <- 20 # Set a maximum cap for number of PCs
 
 # Remap to cleaner group names
 group_remap <- c(
@@ -57,7 +57,7 @@ group_remap <- c(
 
 # Get mtfr, distal and 1kbtiling matrix
 mtfr <- readRDS("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/mTFR_devs_121125/JASPAR2020_distal_deviations.RDS")
-mtfr <- deviationZScores(mtfr)
+mtfr <- deviations(mtfr)
 
 # Load RnBeads objects
 rnbeads <- load.rnb.set("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/RnBeads_291025/reports/data_import_data/rnb.set_preprocessed")
@@ -187,13 +187,13 @@ message(paste("mTFR: Using", n_pc_mtfr, "PCs (variance threshold", var_threshold
 pcs_mtfr <- pca_mtfr$x[, 1:n_pc_mtfr]
 
 # distal PCA
-pca_distal <- prcomp(t(distal), center = TRUE, scale. = FALSE)
+pca_distal <- prcomp(t(distal), center = FALSE, scale. = FALSE)
 n_pc_distal <- select_pcs_by_variance(pca_distal, var_threshold, max_pcs = max_pc)
 message(paste("Distal: Using", n_pc_distal, "PCs (variance threshold", var_threshold, ", max", max_pc, ")"))
 pcs_distal <- pca_distal$x[, 1:n_pc_distal]
 
 # tiling PCA
-pca_tiling <- prcomp(t(tiling), center = TRUE, scale. = FALSE)
+pca_tiling <- prcomp(t(tiling), center = FALSE, scale. = FALSE)
 n_pc_tiling <- select_pcs_by_variance(pca_tiling, var_threshold, max_pcs = max_pc)
 message(paste("Tiling: Using", n_pc_tiling, "PCs (variance threshold", var_threshold, ", max", max_pc, ")"))
 pcs_tiling <- pca_tiling$x[, 1:n_pc_tiling]

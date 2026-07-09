@@ -18,8 +18,11 @@ suppressPackageStartupMessages({
   library(stringr)
   library(RnBeads)
 })
+# 
 source("/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/src/run_mTFR_RnBeads.R", chdir = TRUE)
-motifSetList <- c("JASPAR2020_distal", "JASPAR2020")[1]
+#source("/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR/R/run_methyltfr.R")
+
+motifSetList <- c("JASPAR2020_distal", "JASPAR2020")[2]
 main.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/"
 sample_dir <- paste0(main.dir, "RnBeads_291025/")
 out.dir <- paste0(main.dir, "mTFR_devs_121125/")
@@ -64,7 +67,7 @@ for (motifSet in motifSetList) {
   deviations <- run_methylTFR_RnBeads(
     rnb_set = rnb_set,
     threads = 32,
-    chunkSize = 15,
+    chunkSize = 10,
     tf_bindsites = tf_bindsites,
     gcfreqs = gcfreqs,
     gc_dist = gc_dist,

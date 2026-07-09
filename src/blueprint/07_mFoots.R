@@ -3,6 +3,8 @@
 #####################################################################
 # 07_mFoots.R
 # Created by IBG on 07-11-2025
+# Updated on 07-09-2026: switched from 2-group (Bcell/Tcell) to
+#   3-group merging (Bcell_mem / Bcell_naive / Tcell)
 # Create methylation footprint plots for selected TFs
 #####################################################################
 
@@ -21,29 +23,41 @@ suppressPackageStartupMessages({
 
 source("/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/src/run_mTFR_RnBeads.R", chdir = TRUE)
 main.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/"
-sample_dir <- paste0(main.dir, "TB_RnBeads_271025/")
+sample_dir <- paste0(main.dir, "RnBeads_291025/")
 debug <- paste0(main.dir, "debug/")
 if (!dir.exists(debug)) {
   dir.create(debug)
 }
 plot_dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/figures/blueprint/"
-plot_dir <- paste0(plot_dir, "mFoot_ND/")
+plot_dir <- paste0(plot_dir, "mFoot_allcells_090626/")
 if (!dir.exists(plot_dir)) {
   dir.create(plot_dir)
 }
 
-if (!file.exists(paste0(debug, "methylation_sites_merged_GRangesList.rds"))) {
+if (!file.exists(paste0(debug, "methylation_sites_merged_GRangesList_celltypes.rds"))) {
   # Load RnBeads preprocessed data
   rnb_set <- RnBeads::load.rnb.set(paste0(sample_dir, "reports/data_import_data/rnb.set_preprocessed"))
 
-  # Merging cell type replicates
-  rnbset_merged <- mergeSamples(rnb_set, "cellTypeGroup")
+  # Create a new column in the phenotype data for 3-group cell types.
+  # Bcell_gc (germinal center, memory-lineage) is folded into Bcell_mem;
+  # Bcell_pre (developmentally upstream of naive) is folded into
+  # Bcell_naive; all T-cell subtypes collapse into a single Tcell group.
+  cts <- as.character(rnb_set@pheno$cellTypeShort)
+  cellType3Group <- dplyr::case_when(
+    cts %in% c("Bcell_mem", "Bcell_gc")    ~ "Bcell_mem",
+    cts %in% c("Bcell_naive", "Bcell_pre") ~ "Bcell_naive",
+    TRUE                                    ~ "Tcell"
+  )
+  rnb_set@pheno$cellType3Group <- cellType3Group
+
+  # Merging cell type replicates into the 3 groups
+  rnbset_merged <- mergeSamples(rnb_set, "cellType3Group")
 
   # Get the methylation sites as GRangesList
   msites <- rnb.RnBSet.to.GRangesList(rnbset_merged)
-  saveRDS(msites, paste0(debug, "methylation_sites_merged_GRangesList.rds"))
+  saveRDS(msites, paste0(debug, "methylation_sites_merged_GRangesList_celltypes.rds"))
 } else {
-  msites <- readRDS(paste0(debug, "methylation_sites_merged_GRangesList.rds"))
+  msites <- readRDS(paste0(debug, "methylation_sites_merged_GRangesList_celltypes.rds"))
 }
 
 # Prepare motif data
@@ -73,7 +87,7 @@ distal <- if (motifSet == "JASPAR2020_distal") {
 plot_and_save_difference <- function(samples, save_dir, obs_colors) {
   for (motif in names(tf_bindsites)) {
     if (!file.exists(file.path(save_dir, paste0("TF_footprint_diff_", motif, ".pdf")))) {
-      logger.start(paste("Processing motif", motif, "for B and Tcell samples"))
+      logger.start(paste("Processing motif", motif, "for Bcell_mem, Bcell_naive and Tcell samples"))
 
       # Generate plot data and calculate the difference
       combined_data <- rbindlist(lapply(names(samples), function(cell_type) {
@@ -126,9 +140,12 @@ plot_and_save_difference <- function(samples, save_dir, obs_colors) {
 }
 
 # Define the observed colors for TB samples
+# Bcell_naive stays close in hue to Bcell_mem (blue family), Tcell keeps
+# the distinct orange used previously.
 obs_colors <- c(
-  "Observed divided Expected Bcell" = "#2C4C9B",
-  "Observed divided Expected Tcell" = "#D66117"
+  "Observed divided Expected Bcell_mem"   = "#2C4C9B",
+  "Observed divided Expected Bcell_naive" = "#5B9BD5",
+  "Observed divided Expected Tcell"       = "#D66117"
 )
 
 
