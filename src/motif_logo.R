@@ -18,7 +18,7 @@ tfs <- c(
   "SPIB", "SPI1", "EHF", "ELF3", "IKZF1", "TFAP2C", "TFAP2B", "TFAP2A", "TFAP2E", "TFAP2C",
   "TGIF1", "CREB3L4", "PBX3", "TAL1::TCF3", "MYOG", "ATOH1", "MYF5", "BHLHA15", "ZBTB18", "EBF3",
   "EBF1", "TFAP4", "NEUROD1", "VSX2", "EGR4", "DPRX", "SOX8", "CUX1", "CUX2", "TEAD3", "CEBPB",
-  "FOSL1::JUND", "CEBPB", "BATF", "TBX21", "SPIB", "JUN", "FOS2", "ETV5"
+  "FOSL1::JUND", "CEBPB", "BATF", "TBX21", "SPIB", "JUN", "FOS2", "ETV5","FOSL2"
 )
 tfs <- unique(tfs)                       # drop duplicates
 
