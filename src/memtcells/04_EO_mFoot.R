@@ -25,7 +25,7 @@ sample_dir <- paste0(main.dir, "reports/")
 debug <- paste0(main.dir, "debug/")
 if(!dir.exists(debug)){dir.create(debug)}
 plot_dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/figures/memtcells/"
-plot_dir <- paste0(plot_dir, "EO_mFoot/")
+plot_dir <- paste0(plot_dir, "EO_mFoot_150726/")
 if(!dir.exists(plot_dir)){dir.create(plot_dir)}
 
 if(!file.exists(paste0(debug,"memoryTcells_msites.RDS"))){
@@ -43,13 +43,13 @@ msites <- readRDS(paste0(debug,"memoryTcells_msites.RDS"))
 }
 
 # Load annotation files
+# Prepare motif data
 motifSet <- "JASPAR2020"
-tf_bindsites <- getTFbindsites(motifSet)
+tf_bindsites <- readRDS("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/debug/methylTFRAnnotationHg38/inst/extdata/JASPAR2020_tf_bindsites.rds")
 motifSet <- "JASPAR2020_distal"
-gcfreqs <- getGCfreq(motifSet)
-gc_dist <- getGenomeGC("hg38")
-distal <- readRDS("/icbb/projects/share/annotations/methylTFRAnnotationHg38/inst/extdata/distal_regions.RDS")
-distal <- if(motifSet == "JASPAR2020_distal"){distal}else{NULL}
+gcfreqs <- readRDS("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/debug/methylTFRAnnotationHg38/inst/extdata/JASPAR2020_DISTAL_motif_gcfreq.rds")
+gc_dist <- readRDS("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/debug/methylTFRAnnotationHg38/inst/extdata/genomewide_GC_hg38.rds")
+
 
 
 # Define the TFs of interest
