@@ -1,63 +1,52 @@
-# Load necessary libraries
-suppressPackageStartupMessages(library(JASPAR2020))
-suppressPackageStartupMessages(library(TFBSTools))
-suppressPackageStartupMessages(library(ggplot2))
-suppressPackageStartupMessages(library(motifmatchr))
-suppressPackageStartupMessages(library(ChrAccR))
-suppressPackageStartupMessages(library(grid))
-suppressPackageStartupMessages(library(BSgenome))
-suppressPackageStartupMessages(library(muLogR))
+#!/usr/bin/env Rscript
 
-# Define the directory to save motif logos
-motif_dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/figures/motif_logos/"
-if (!dir.exists(motif_dir)) {
-  dir.create(motif_dir)
-}
-source("/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/src/utils.R")
+#####################################################################
+# motif_logos.R
+# Fetch PWMs from JASPAR2020 for a list of TFs and draw motif logos.
+#####################################################################
 
-# Function to extract and save motif logos for specific transcription factors
-save_motif_logos <- function(tfNames, motifDb = "jaspar2020", motif_dir) {
-  
-  # Fetch the motif data from the specified database
-  motifObj <- prepareMotifmatchr("hg38", motifDb)$motifs
-  
-  for (tf in tfNames) {
-    # Use a regex pattern to match the exact transcription factor name
-    full_mn <- grep(tf, names(motifObj), value = TRUE, ignore.case = TRUE)
-    
-    if (length(full_mn) > 0) {
-      # Open a PDF device
-      pdf_file <- paste0(motif_dir, tf, "_motif_logo.pdf")
-      pdf(pdf_file, width = 6, height = 2)
-      
-      for (mn in full_mn) {
-        pwm <- motifObj[[mn]]  # Extract the PWM for the current match
+suppressPackageStartupMessages({
+  library(JASPAR2020); library(TFBSTools); library(ggplot2); library(ggseqlogo)
+})
 
-        # Generate the motif logo using hmSeqLogo and save it
-        grid.newpage()
-        hmSeqLogo(pwm)
-        
-        # Add a title with the original motif name
-        grid.text(mn, y = unit(1, "npc") - unit(1, "lines"), just = "center", gp = gpar(fontsize = 10))
-      }
+fig_dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/figures/"   # change if you want the PDF elsewhere
+out_pdf <- file.path(fig_dir, "motif_logos.pdf")
 
-      # Close the PDF device
-      dev.off()
-      
-      cat("Saved motif logos for", tf, "as", pdf_file, "\n")
-    } else {
-      cat("Motif for transcription factor", tf, "not found in the database.\n")
-    }
-  }
-}
-
-# Example usage
-tfNames <-  c(
+tfs <- c(
   "TFAP2B", "PAX5", "PAX9", "PAX1", "NHLH2", "ASCL1", "NHLH1", "BHLHE22", "FERD3L", "PAX6",
   "EMX1", "PAX4", "EN1", "LHX1", "ELF4", "ELF2", "ETV5", "ETV6", "ELF5", "SPIC",
   "SPIB", "SPI1", "EHF", "ELF3", "IKZF1", "TFAP2C", "TFAP2B", "TFAP2A", "TFAP2E", "TFAP2C",
   "TGIF1", "CREB3L4", "PBX3", "TAL1::TCF3", "MYOG", "ATOH1", "MYF5", "BHLHA15", "ZBTB18", "EBF3",
-  "EBF1", "TFAP4", "NEUROD1", "VSX2", "EGR4", "DPRX", "SOX8", "CUX1", "CUX2", "TEAD3"
+  "EBF1", "TFAP4", "NEUROD1", "VSX2", "EGR4", "DPRX", "SOX8", "CUX1", "CUX2", "TEAD3", "CEBPB",
+  "FOSL1::JUND", "CEBPB", "BATF", "TBX21", "SPIB", "JUN", "FOS2", "ETV5"
 )
-save_motif_logos(tfNames, motifDb = "jaspar2020", motif_dir = motif_dir)
+tfs <- unique(tfs)                       # drop duplicates
 
+# --- pull the full human CORE set once, index by name -----------------------
+pfms <- getMatrixSet(JASPAR2020, list(species = 9606, collection = "CORE"))
+nm   <- vapply(pfms, name, character(1))
+
+# case-insensitive match; keep first hit per requested TF
+idx  <- match(toupper(tfs), toupper(nm))
+found_tf  <- tfs[!is.na(idx)]
+missing   <- tfs[is.na(idx)]
+sel_pfms  <- pfms[idx[!is.na(idx)]]
+
+cat(sprintf("Requested (unique): %d\n", length(tfs)))
+cat(sprintf("Matched in JASPAR2020 CORE: %d\n", length(found_tf)))
+if (length(missing) > 0)
+  cat("NOT found (check spelling / not in JASPAR2020):\n  ",
+      paste(missing, collapse = ", "), "\n")
+if (length(sel_pfms) == 0) stop("No motifs matched; nothing to draw.")
+
+# --- convert PFMs to position-probability matrices --------------------------
+mats <- lapply(sel_pfms, function(p) { m <- as.matrix(p); sweep(m, 2, colSums(m), "/") })
+names(mats) <- make.unique(found_tf)     # unique panel titles
+
+# --- draw logos (a few columns, height scales with row count) ---------------
+ncol_grid <- 5
+nrow_grid <- ceiling(length(mats) / ncol_grid)
+logo <- ggseqlogo(mats, method = "bits", ncol = ncol_grid)
+
+ggsave(out_pdf, logo, width = 2.4 * ncol_grid, height = 1.8 * nrow_grid, limitsize = FALSE)
+cat("Saved", out_pdf, "with", length(mats), "logos.\n")
