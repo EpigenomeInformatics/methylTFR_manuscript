@@ -8,6 +8,7 @@
 #####################################################################
 
 set.seed(42)
+muLogR::logger.info("Loading libraries...")
 suppressPackageStartupMessages({
   library(data.table)
   library(dplyr)
@@ -17,45 +18,22 @@ suppressPackageStartupMessages({
 })
 
 # Directory where your data is located
-data.dir <- "/icbb/projects/share/datasets/"
-bed.dir <- file.path(data.dir, "blueprint")
-sample.annotation <- file.path(bed.dir, "samples_TB.tsv")
-if (!file.exists(sample.annotation)) {
-  sample.annotation <- file.path(bed.dir, "samples.tsv")
-  sannot <- data.table::fread(sample.annotation)
-  # Filter the cancer cells
-  sannot <- sannot %>% filter(cellTypeGroup %in% c("Bcell", "Tcell"))
-  sample.annotation <- file.path(bed.dir, "samples_TB.tsv")
-  data.table::fwrite(sannot, sample.annotation, sep = "\t")
-}
-num.cores <- 30
-
+data.dir <- "/scratch/icbb/mtfr_manuscript/"
+bed.dir <- file.path(data.dir, "blueprint_data")
+sample.annotation <- file.path(bed.dir, "samples_subset.tsv")
+ 
 # Directory where the output should be written to
-analysis.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/"
+analysis.dir <- "/scratch/icbb/mtfr_manuscript/"
 if (!dir.exists(analysis.dir)) dir.create(analysis.dir)
-analysis.dir <- file.path(analysis.dir, "TB_RnBeads_271025")
+analysis.dir <- file.path(analysis.dir, "BLUEPRINT")
 if (!dir.exists(analysis.dir)) dir.create(analysis.dir)
+
 # Multiprocess
 parallel.setup(30)
 
 # Directory where the report files should be written to
 report.dir <- file.path(analysis.dir, "reports")
 rnb.initialize.reports(report.dir)
-
-# Create tiling regions for 1kb
-tiling1kb <- muRtools::getTilingRegions("hg38", width = 1000L, onlyMainChrs = TRUE) %>%
-  data.table::as.data.table() %>%
-  dplyr::select(seqnames, start, end) %>%
-  as.data.frame()
-colnames(tiling1kb) <- c("Chromosome", "Start", "End")
-rnb.set.annotation(type = "tiling1kb", regions = tiling1kb, assembly = "hg38")
-
-# Create distal regions
-distal <- readRDS("/icbb/projects/share/annotations/methylTFRAnnotationHg38/inst/extdata/distal_regions.RDS")
-distal <- as.data.frame(distal) %>%
-  dplyr::select(seqnames, start, end)
-colnames(distal) <- c("Chromosome", "Start", "End")
-rnb.set.annotation(type = "distal", regions = distal, assembly = "hg38")
 
 # Set up the analysis
 rnb.options(
@@ -64,63 +42,71 @@ rnb.options(
   import.table.separator = "\t",
   region.aggregation = "sum",
   analyze.sites = FALSE,
-  region.types = c("tiling1kb", "distal", "promoters"),
+  region.types = c("cpgislands", "promoters", "genes"),
   import.default.data.type = "data.dir",
   import.bed.style = "EPP",
   disk.dump.big.matrices = TRUE,
   strand.specific = FALSE,
   filtering.sex.chromosomes.removal = TRUE,
-  differential.enrichment.lola = FALSE, # Running ERROR
-  # differential.enrichment.lola.dbs = "/icbb/projects/share/annotations/lolaDB/",
+  differential.enrichment.lola = FALSE,
   identifiers.column = "bedFile",
   differential.comparison.columns = "cellTypeGroup" # not exclusive cell-types
 )
+
 if (!file.exists(paste0(report.dir, "/data_import_data/rnb.set_preprocessed"))) {
-  # Data Import
   data.source <- c(bed.dir, sample.annotation, 1)
   result <- rnb.run.import(data.source = data.source, data.type = "bs.bed.dir", dir.reports = report.dir)
-  rnb.set <- result$rnb.set
+  rnbset <- result$rnb.set
 
-  # Quality Control
-  rnb.run.qc(rnb.set, report.dir)
+  ## Quality Control
+  rnb.run.qc(rnbset, report.dir)
 
-  # Preprocessing
-  rnb.set <- rnb.run.preprocessing(rnb.set, dir.reports = report.dir)$rnb.set
+  ## Preprocessing
+  rnbset <- rnb.run.preprocessing(rnbset, dir.reports = report.dir)$rnb.set
 
-  # save the object
-  save.rnb.set(rnb.set, paste0(report.dir, "/data_import_data/rnb.set_preprocessed"), archive = FALSE)
-} else {
-  # Load the preprocessed object
-  rnb.set <- load.rnb.set(paste0(report.dir, "/data_import_data/rnb.set_preprocessed"))
-}
-if (!file.exists(paste0(report.dir, "/differential_methylation_data/differential_rnbDiffMeth"))) {
-  # Differential methylation
-  rnb.run.differential(rnb.set, report.dir)
-} else {
-  # Load differential methylation results
-  diffMeth <- load.rnb.diffmeth(paste0(analysis.dir, "/reports/differential_methylation_data/differential_rnbDiffMeth/"))
+  ## save the object
+  save.rnb.set(rnbset, paste0(report.dir, "/data_import_data/rnb.set_preprocessed"), archive = FALSE)
+
+  ## Exploratory analysis
+  rnb.run.exploratory(rnbset, report.dir)
+}else{
+  rnbset <- load.rnb.set(paste0(report.dir, "/data_import_data/rnb.set_preprocessed"))
 }
 
-# Run LOLA for differential methylation data
-logger.start("Running LOLA")
-lolaDb_path <- "/icbb/projects/share/annotations/lolaDB/hg38/"
+# Differential methylation
+rnb.run.differential(rnbset, report.dir)
 
-# Run LOLA
-res <- performLolaEnrichment.diffMeth(rnb.set, diffMeth, lolaDb_path)
-logger.info("Saving results")
-saveRDS(res, paste0(analysis.dir, "/reports/differential_methylation_data/differential_rnbDiffMeth/lola_results_full.rds"))
-logger.completed()
+#Subset to only include B cells
+idx <- rnbset@pheno[rnbset@pheno$cellTypeGroup != "Bcell", ]$bedFile
+idxt <- rnbset@pheno[rnbset@pheno$cellTypeGroup == "Bcell", ]$bedFile
+rnbset_bcells <- remove.samples(rnbset,idx)
+rnbset_tcells <- remove.samples(rnbset,idxt)
 
-# Plot the LOLA results
-source("/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/src/lola_utils.R")
-# Plot Volcano plot
-comparisons <- names(res$region)
-outputDir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/figures/blueprint/"
-lolaVolcanoPlot(
-  cell = NULL,
-  lolaDb = lolaDb,
-  outputDir = outputDir,
-  comparison = comparisons,
-  region = "tiling1kb",
-  database = "TF_motifs"
+# Set report directories
+breport.dir <- paste0(report.dir,"/bcell")
+treport.dir <- paste0(report.dir,"/tcell")
+if(!dir.exists(breport.dir)){dir.create(breport.dir)}
+if(!dir.exists(treport.dir)){dir.create(treport.dir)}
+
+# Set options
+rnb.options(
+  analysis.name = "Blueprint Bcell VS Tcell",
+  assembly = "hg38",
+  import.table.separator = "\t",
+  region.aggregation = "sum",
+  region.types = c("cpgislands"),
+  import.default.data.type = "data.dir",
+  import.bed.style = "EPP",
+  analyze.sites = FALSE,
+  disk.dump.big.matrices = TRUE,
+  strand.specific = FALSE,
+  filtering.sex.chromosomes.removal = TRUE,
+  differential.enrichment.lola = FALSE,
+  #differential.enrichment.lola.dbs = "/icbb/projects/share/annotations/lolaDB",
+  identifiers.column = "bedFile",
+  differential.comparison.columns = "cellTypeShort" #  exclusive cell-types
 )
+
+# Differential methylation
+rnb.run.differential(rnbset_bcells, breport.dir)
+rnb.run.differential(rnbset_tcells, treport.dir)

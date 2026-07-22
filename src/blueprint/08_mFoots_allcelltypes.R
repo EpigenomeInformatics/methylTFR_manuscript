@@ -88,13 +88,6 @@ if (!file.exists(paste0(debug, "methylation_sites_merged_GRangesList_celltype5G_
   logger.info("Loading RnBeads preprocessed data...")
   rnb_set <- RnBeads::load.rnb.set(paste0(sample_dir, "reports/data_import_data/rnb.set_preprocessed"))
 
-  # Remove DISEASE samples
-  disease_groups <- c("Multiple Myeloma", "Acute Lymphocytic Leukemia")
-  disease_idx <- which(as.character(rnb_set@pheno$DISEASE) %in% disease_groups)
-  if (length(disease_idx) > 0) {
-    rnb_set <- remove.samples(rnb_set, disease_idx)
-  }
-
   cts <- as.character(rnb_set@pheno$cellTypeShort)
   cellType5Group <- dplyr::case_when(
     cts %in% c("Bcell_mem", "Bcell_gc")                       ~ "Bcell_mem",

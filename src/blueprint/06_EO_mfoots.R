@@ -50,9 +50,8 @@ sample_names <- colnames(dev_matrix)
 # Match sannot rows to deviation matrix columns
 matched_sannot <- sannot[match(sample_names, sannot$bedFile), ]
 
-# Remove disease samples from deviations
-disease_groups <- c("Multiple Myeloma", "Acute Lymphocytic Leukemia")
-keep_dev <- !matched_sannot$cellTypeGroup %in% disease_groups
+# Remove disease samples from deviations (keep only non-diseased "None" samples)
+keep_dev <- matched_sannot$DISEASE == "None"
 
 dev_matrix <- dev_matrix[, keep_dev, drop = FALSE]
 matched_sannot <- matched_sannot[keep_dev, ]
@@ -74,8 +73,8 @@ if (!file.exists(paste0(debug, "methylation_sites_merged_GRangesList_celltype_22
   # Load RnBeads preprocessed data
   rnb_set <- RnBeads::load.rnb.set(paste0(sample_dir, "reports/data_import_data/rnb.set_preprocessed"))
 
-  # Drop disease samples BEFORE grouping/merging
-  disease_idx <- which(as.character(rnb_set@pheno$cellTypeGroup) %in% disease_groups)
+  # Drop disease samples BEFORE grouping/merging (keep only DISEASE == "None")
+  disease_idx <- which(as.character(rnb_set@pheno$DISEASE) != "None")
   if (length(disease_idx) > 0) {
     rnb_set <- remove.samples(rnb_set, disease_idx)
   }
