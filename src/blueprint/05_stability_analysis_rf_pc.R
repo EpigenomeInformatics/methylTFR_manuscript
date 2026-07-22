@@ -9,8 +9,10 @@
 # - Select number of PCs based on cumulative variance explained
 #   instead of a fixed number (n_pc = 20).
 # - Added a cap (max_pc) to limit the total number of PCs selected.
+#
+# Updated: Fixed disease filtering to use the DISEASE column and
+# corrected variable names during RnBeads sample removal.
 #####################################################################
-
 
 suppressPackageStartupMessages({
   library(methylTFR)
@@ -28,8 +30,10 @@ source("/icbb/projects/nitschre/methylTFR/scripts/other/helpers.R")
 fig_dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/figures/blueprint/"
 table_dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/tables/"
 if (!dir.exists(fig_dir)) dir.create(fig_dir, recursive = TRUE)
+
 sannot <- read.csv("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/RnBeads_291025/reports/data_import_data/annotation.csv", stringsAsFactors = FALSE)
-# n_pc <- 20 # Replaced by dynamic selection
+sannot$bedFile <- as.character(sannot$bedFile)
+
 var_threshold <- 0.9 # Use PCs explaining 90% of variance
 max_pc <- 20 # Set a maximum cap for number of PCs
 
@@ -55,24 +59,36 @@ group_remap <- c(
 # Get the data
 #####################################################################
 
-# Get mtfr, distal and 1kbtiling matrix
-mtfr <- readRDS("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/mTFR_devs_121125/JASPAR2020_distal_deviations.RDS")
-mtfr <- deviations(mtfr)
+# 1. Get mTFR deviation matrix and filter
+mtfr_obj <- readRDS("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/mTFR_devs_121125/JASPAR2020_distal_deviations.RDS")
+deviations_mat <- deviations(mtfr_obj)
 
-# Load RnBeads objects
+# Match annotations to deviation matrix columns
+matched_sannot_dev <- sannot[match(colnames(deviations_mat), sannot$bedFile), ]
+
+# Remove deviations for samples with disease
+keep_dev <- matched_sannot_dev$DISEASE == "None"
+mtfr <- deviations_mat[, keep_dev, drop = FALSE]
+
+# 2. Load RnBeads objects and filter
 rnbeads <- load.rnb.set("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/RnBeads_291025/reports/data_import_data/rnb.set_preprocessed")
 
-# Extract methylation matrices
+# Remove DISEASE samples (fixed variable name from rnb_set to rnbeads)
+disease_idx <- which(as.character(rnbeads@pheno$DISEASE) != "None")
+if (length(disease_idx) > 0) {
+  rnbeads <- remove.samples(rnbeads, disease_idx)
+}
+
+# Extract methylation matrices from the filtered RnBeads object
 distal <- meth(rnbeads, type = "distal")
 tiling <- meth(rnbeads, type = "tiling1kb")
 
-# Remap cell type group names
-sannot$cellTypeGroup <- group_remap[sannot$cellTypeGroup]
-sannot$bedFile <- as.character(sannot$bedFile)
+# 3. Extract and remap cell types for the remaining samples
 sample_names <- colnames(mtfr)
+matched_sannot_final <- sannot[match(sample_names, sannot$bedFile), ]
 
-# Match and extract cellTypeGroup
-cell_types <- sannot$cellTypeGroup[match(sample_names, sannot$bedFile)]
+# Remap cell type group names using the group_remap dictionary
+cell_types <- unname(group_remap[matched_sannot_final$cellTypeGroup])
 
 #####################################################################
 # Functions for cross-validation with RF
@@ -177,10 +193,11 @@ select_pcs_by_variance <- function(pca_obj, threshold = 0.90, max_pcs = 30) {
   return(n_pcs)
 }
 
-
+#####################################################################
+# Execute PCA and Random Forest
 #####################################################################
 
-# mtfr PCA (632 features)
+# mtfr PCA
 pca_mtfr <- prcomp(t(mtfr), center = FALSE, scale. = FALSE)
 n_pc_mtfr <- select_pcs_by_variance(pca_mtfr, var_threshold, max_pcs = max_pc)
 message(paste("mTFR: Using", n_pc_mtfr, "PCs (variance threshold", var_threshold, ", max", max_pc, ")"))
@@ -198,6 +215,7 @@ n_pc_tiling <- select_pcs_by_variance(pca_tiling, var_threshold, max_pcs = max_p
 message(paste("Tiling: Using", n_pc_tiling, "PCs (variance threshold", var_threshold, ", max", max_pc, ")"))
 pcs_tiling <- pca_tiling$x[, 1:n_pc_tiling]
 
+# RF with stratified splits
 acc_mtfr_pc <- cv_rf_stratified_splits(t(pcs_mtfr), cell_types, repeats = 100, test_frac = 0.2, seed = 42)
 acc_distal_pc <- cv_rf_stratified_splits(t(pcs_distal), cell_types, repeats = 100, test_frac = 0.2, seed = 42)
 acc_tiling_pc <- cv_rf_stratified_splits(t(pcs_tiling), cell_types, repeats = 100, test_frac = 0.2, seed = 42)
@@ -205,18 +223,19 @@ acc_tiling_pc <- cv_rf_stratified_splits(t(pcs_tiling), cell_types, repeats = 10
 results <- data.frame(
   Representation = c("mTFR", "Distal", "Tiling1kb"),
   Accuracy = c(acc_mtfr_pc, acc_distal_pc, acc_tiling_pc),
-  NumPCs = c(n_pc_mtfr, n_pc_distal, n_pc_tiling) # Added PC count
+  NumPCs = c(n_pc_mtfr, n_pc_distal, n_pc_tiling)
 )
 write.csv(results, file = paste0(table_dir, "rf_classification_accuracy_pc_stratified_splits_var90.csv"), row.names = FALSE)
 
+# RF with 5-fold CV
 set.seed(42)
-acc_mtfr_pc <- cv_rf_accuracy_safe(t(pcs_mtfr), cell_types, k = 5, ntree = 500)
-acc_distal_pc <- cv_rf_accuracy_safe(t(pcs_distal), cell_types, k = 5, ntree = 500)
-acc_tiling_pc <- cv_rf_accuracy_safe(t(pcs_tiling), cell_types, k = 5, ntree = 500)
+acc_mtfr_pc_cv <- cv_rf_accuracy_safe(t(pcs_mtfr), cell_types, k = 5, ntree = 500)
+acc_distal_pc_cv <- cv_rf_accuracy_safe(t(pcs_distal), cell_types, k = 5, ntree = 500)
+acc_tiling_pc_cv <- cv_rf_accuracy_safe(t(pcs_tiling), cell_types, k = 5, ntree = 500)
 
 res <- data.frame(
   Representation = c("mTFR", "Distal", "Tiling1kb"),
-  Accuracy = c(acc_mtfr_pc, acc_distal_pc, acc_tiling_pc),
-  NumPCs = c(n_pc_mtfr, n_pc_distal, n_pc_tiling) # Added PC count
+  Accuracy = c(acc_mtfr_pc_cv, acc_distal_pc_cv, acc_tiling_pc_cv),
+  NumPCs = c(n_pc_mtfr, n_pc_distal, n_pc_tiling)
 )
 write.csv(res, file = paste0(table_dir, "rf_classification_accuracy_pc_5foldcv_var90.csv"), row.names = FALSE)

@@ -59,23 +59,32 @@ group_remap <- c(
 # Paths
 plot_dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/figures/blueprint/"
 if (!dir.exists(plot_dir)) dir.create(plot_dir)
-deviations <- readRDS("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/mTFR_devs_121125/JASPAR2020_distal_deviations.RDS")
-deviations <- deviations(deviations)
+
+# Load deviations
+dev_obj <- readRDS("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/mTFR_devs_121125/JASPAR2020_distal_deviations.RDS")
+deviations <- deviations(dev_obj)
+
+# Load annotations
 sannot <- read.csv("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/RnBeads_291025/reports/data_import_data/annotation.csv", stringsAsFactors = FALSE)
 
 # Ensure consistent character types
 sannot$bedFile <- as.character(sannot$bedFile)
 sample_names <- colnames(deviations)
 
-# Match and extract cellTypeGroup
-cell_types <- sannot$cellTypeGroup[match(sample_names, sannot$bedFile)]
+# Align annotations with the deviation matrix columns
+matched_sannot <- sannot[match(sample_names, sannot$bedFile), ]
 
-# Remove deviations for samples in DISEASE groups
-disease_groups <- c("Multiple Myeloma", "Acute Lymphocytic Leukemia")
-keep <- !cell_types %in% disease_groups
+# Extract variables from the correctly ordered annotation
+DISEASE <- matched_sannot$DISEASE
+# Define cell_types (using cellTypeGroup here, adjust to cellTypeShort if needed)
+cell_types <- matched_sannot$cellTypeGroup 
 
-deviations   <- deviations[, keep]
-cell_types   <- cell_types[keep]
+# Identify healthy samples based on DISEASE column
+keep <- DISEASE == "None"
+
+# Filter out the disease samples
+deviations <- deviations[, keep]
+cell_types <- cell_types[keep]
 
 # Apply PCA on the filtered data
 tdf <- as.data.frame(t(deviations))
@@ -105,6 +114,7 @@ dev.off()
 
 # Load RnBeads objects
 rnbeads <- load.rnb.set("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/RnBeads_291025/reports/data_import_data/rnb.set_preprocessed")
+
 
 # Extract methylation matrices
 distal <- meth(rnbeads, type = "distal")
