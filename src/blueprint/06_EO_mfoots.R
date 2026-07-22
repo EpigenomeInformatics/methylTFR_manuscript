@@ -34,9 +34,16 @@ if (!dir.exists(plot_dir)) {
   dir.create(plot_dir)
 }
 
-if (!file.exists(paste0(debug, "methylation_sites_merged_GRangesList_celltype4G.rds"))) {
+if (!file.exists(paste0(debug, "methylation_sites_merged_GRangesList_celltype_220726.rds"))) {
   # Load RnBeads preprocessed data
   rnb_set <- RnBeads::load.rnb.set(paste0(sample_dir, "reports/data_import_data/rnb.set_preprocessed"))
+
+  # Drop disease samples BEFORE grouping/merging
+  disease_groups <- c("Multiple Myeloma", "Acute Lymphocytic Leukemia")
+  disease_idx <- which(as.character(rnb_set@pheno$cellTypeGroup) %in% disease_groups)
+  if (length(disease_idx) > 0) {
+    rnb_set <- remove.samples(rnb_set, disease_idx)
+  }
 
   # Create a new column in the phenotype data for 4-group cell types.
   # Treg is canonically a CD4+ subset, so it is folded into TCD4.
@@ -56,9 +63,9 @@ if (!file.exists(paste0(debug, "methylation_sites_merged_GRangesList_celltype4G.
 
   # Get the methylation sites as GRangesList
   msites <- rnb.RnBSet.to.GRangesList(rnbset_merged)
-  saveRDS(msites, paste0(debug, "methylation_sites_merged_GRangesList_celltype4G.rds"))
+  saveRDS(msites, paste0(debug, "methylation_sites_merged_GRangesList_celltype_220726.rds"))
 } else {
-  msites <- readRDS(paste0(debug, "methylation_sites_merged_GRangesList_celltype4G.rds"))
+  msites <- readRDS(paste0(debug, "methylation_sites_merged_GRangesList_celltype_220726.rds"))
 }
 
 # Prepare motif data

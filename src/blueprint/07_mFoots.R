@@ -6,6 +6,7 @@
 # Updated on 07-09-2026: switched from 2-group (Bcell/Tcell) to
 #   3-group merging (Bcell_mem / Bcell_naive / Tcell)
 # Create methylation footprint plots for selected TFs
+# Added mean deviation scores to legends (separated by cell type)
 #####################################################################
 
 set.seed(42)
@@ -29,19 +30,52 @@ if (!dir.exists(debug)) {
   dir.create(debug)
 }
 plot_dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/figures/blueprint/"
-plot_dir <- paste0(plot_dir, "mFoot_allcells_090626/")
+plot_dir <- paste0(plot_dir, "mFoot_allcells_220726/")
 if (!dir.exists(plot_dir)) {
   dir.create(plot_dir)
 }
 
-if (!file.exists(paste0(debug, "methylation_sites_merged_GRangesList_celltypes.rds"))) {
-  # Load RnBeads preprocessed data
-  rnb_set <- RnBeads::load.rnb.set(paste0(sample_dir, "reports/data_import_data/rnb.set_preprocessed"))
+# -------------------------------------------------------------------
+# Load and Process Deviation Scores
+# -------------------------------------------------------------------
+logger.info("Loading and filtering deviation scores...")
+dev_obj <- readRDS("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/mTFR_devs_121125/JASPAR2020_distal_deviations.RDS")
+dev_matrix <- deviations(dev_obj)
 
-  # Create a new column in the phenotype data for 3-group cell types.
-  # Bcell_gc (germinal center, memory-lineage) is folded into Bcell_mem;
-  # Bcell_pre (developmentally upstream of naive) is folded into
-  # Bcell_naive; all T-cell subtypes collapse into a single Tcell group.
+sannot <- read.csv(paste0(sample_dir, "reports/data_import_data/annotation.csv"), stringsAsFactors = FALSE)
+sannot$bedFile <- as.character(sannot$bedFile)
+sample_names <- colnames(dev_matrix)
+
+# Match sannot rows to deviation matrix columns
+matched_sannot <- sannot[match(sample_names, sannot$bedFile), ]
+
+# Remove disease samples from deviations
+disease_groups <- c("Multiple Myeloma", "Acute Lymphocytic Leukemia")
+keep_dev <- !matched_sannot$cellTypeGroup %in% disease_groups
+
+dev_matrix <- dev_matrix[, keep_dev, drop = FALSE]
+matched_sannot <- matched_sannot[keep_dev, ]
+
+# Map the kept deviation samples to the 3-group classification
+matched_sannot$cellType3Group <- dplyr::case_when(
+  matched_sannot$cellTypeShort %in% c("Bcell_mem", "Bcell_gc")    ~ "Bcell_mem",
+  matched_sannot$cellTypeShort %in% c("Bcell_naive", "Bcell_pre") ~ "Bcell_naive",
+  TRUE                                                            ~ "Tcell"
+)
+dev_groups <- matched_sannot$cellType3Group
+
+# -------------------------------------------------------------------
+# Load and Process RnBeads Methylation Data
+# -------------------------------------------------------------------
+if (!file.exists(paste0(debug, "methylation_sites_merged_GRangesList_celltypes_220726.rds"))) {
+  logger.info("Loading RnBeads preprocessed data...")
+  rnb_set <- RnBeads::load.rnb.set(paste0(sample_dir, "reports/data_import_data/rnb.set_preprocessed"))
+  
+  disease_idx <- which(as.character(rnb_set@pheno$cellTypeGroup) %in% disease_groups)
+  if (length(disease_idx) > 0) {
+    rnb_set <- remove.samples(rnb_set, disease_idx)
+  }
+  
   cts <- as.character(rnb_set@pheno$cellTypeShort)
   cellType3Group <- dplyr::case_when(
     cts %in% c("Bcell_mem", "Bcell_gc")    ~ "Bcell_mem",
@@ -50,24 +84,25 @@ if (!file.exists(paste0(debug, "methylation_sites_merged_GRangesList_celltypes.r
   )
   rnb_set@pheno$cellType3Group <- cellType3Group
 
-  # Merging cell type replicates into the 3 groups
+  logger.info("Merging samples into 3 groups...")
   rnbset_merged <- mergeSamples(rnb_set, "cellType3Group")
 
-  # Get the methylation sites as GRangesList
   msites <- rnb.RnBSet.to.GRangesList(rnbset_merged)
-  saveRDS(msites, paste0(debug, "methylation_sites_merged_GRangesList_celltypes.rds"))
+  saveRDS(msites, paste0(debug, "methylation_sites_merged_GRangesList_celltypes_220726.rds"))
 } else {
-  msites <- readRDS(paste0(debug, "methylation_sites_merged_GRangesList_celltypes.rds"))
+  logger.info("Loading previously merged methylation GRangesList...")
+  msites <- readRDS(paste0(debug, "methylation_sites_merged_GRangesList_celltypes_220726.rds"))
 }
 
-# Prepare motif data
+# -------------------------------------------------------------------
+# Prepare Motifs and TFs
+# -------------------------------------------------------------------
 motifSet <- "JASPAR2020"
 tf_bindsites <- getTFbindsites(motifSet)
-motifSet <- "JASPAR2020_distal"
-gcfreqs <- getGCfreq(motifSet)
+motifSet_distal <- "JASPAR2020_distal"
+gcfreqs <- getGCfreq(motifSet_distal)
 gc_dist <- getGenomeGC("hg38")
 
-# Define the TFs of interest
 tfs <- c(
   "TFAP2B", "PAX5", "PAX9", "PAX1", "NHLH2", "ASCL1", "NHLH1", "BHLHE22", "FERD3L", "PAX6",
   "EMX1", "PAX4", "EN1", "LHX1", "ELF4", "ELF2", "ETV5", "ETV6", "ELF5", "SPIC",
@@ -78,18 +113,39 @@ tfs <- c(
 tf_bindsites <- tf_bindsites[names(tf_bindsites) %in% tfs]
 
 distal <- readRDS("/icbb/projects/share/annotations/methylTFRAnnotationHg38/inst/extdata/distal_regions.RDS")
-distal <- if (motifSet == "JASPAR2020_distal") {
-  distal
-} else {
-  NULL
-}
-# Function to generate and save a plot for all samples
-plot_and_save_difference <- function(samples, save_dir, obs_colors) {
+
+# -------------------------------------------------------------------
+# Plotting Function
+# -------------------------------------------------------------------
+# Defines base colors assigned to the groups
+base_colors <- c(
+  "Bcell_mem"   = "#2C4C9B",
+  "Bcell_naive" = "#5B9BD5",
+  "Tcell"       = "#D66117"
+)
+
+plot_and_save_difference <- function(samples, save_dir, base_colors, dev_mat, dev_grps) {
   for (motif in names(tf_bindsites)) {
     if (!file.exists(file.path(save_dir, paste0("TF_footprint_diff_", motif, ".pdf")))) {
       logger.start(paste("Processing motif", motif, "for Bcell_mem, Bcell_naive and Tcell samples"))
 
-      # Generate plot data and calculate the difference
+      # Find matching row in deviation matrix (exact match or word-boundary partial match)
+      motif_idx <- which(rownames(dev_mat) == motif)
+      if (length(motif_idx) == 0) {
+        motif_idx <- grep(paste0("\\b", motif, "\\b"), rownames(dev_mat), ignore.case = TRUE)
+      }
+      
+      # Calculate mean deviation for each cell type
+      mean_devs <- list()
+      for (g in names(samples)) {
+        if (length(motif_idx) > 0) {
+          # Averages across matched rows (if multiple) and group columns
+          mean_devs[[g]] <- mean(dev_mat[motif_idx, dev_grps == g], na.rm = TRUE)
+        } else {
+          mean_devs[[g]] <- NA
+        }
+      }
+
       combined_data <- rbindlist(lapply(names(samples), function(cell_type) {
         plot_data <- plotExpectedFootprint(
           motif = motif,
@@ -101,11 +157,17 @@ plot_and_save_difference <- function(samples, save_dir, obs_colors) {
           enhancer = distal,
           returnPlotData = TRUE
         )
-        # Calculate observed/expected methylation
+        
         difference_data <- plot_data$plotDF[, .(avg_methyl = avg_methyl[type == "Observed"] / avg_methyl[type == "Expected"]), by = x]
-        difference_data[, type := paste("Observed divided Expected", cell_type)]
+        
+        # Format the legend label to include the mean deviation score
+        dev_val <- round(mean_devs[[cell_type]], 2)
+        dev_str <- ifelse(is.na(dev_val), "N/A", dev_val)
+        label_str <- paste0("Obs/Exp ", cell_type, " (Mean Dev: ", dev_str, ")")
+        
+        difference_data[, type := label_str]
+        difference_data[, original_group := cell_type]
 
-        # Now normalize the ratio by flanking region
         flankNorm <- 30
         flank <- max(abs(difference_data$x), na.rm = TRUE)
         idx <- abs(difference_data$x) >= flank - flankNorm
@@ -116,21 +178,24 @@ plot_and_save_difference <- function(samples, save_dir, obs_colors) {
       }))
       logger.completed()
 
-      combined_data[, type := factor(type, levels = names(obs_colors))]
+      # Map dynamic labels to base colors
+      dynamic_colors <- setNames(base_colors[combined_data$original_group], combined_data$type)
+      dynamic_colors <- dynamic_colors[!duplicated(names(dynamic_colors))]
+      
+      # Ensure factor levels keep consistent legend order
+      combined_data[, type := factor(type, levels = names(dynamic_colors))]
 
-      # Plot the combined difference data for all samples
       logger.info("Plotting combined difference data for all samples")
       p_combined <- ggplot(combined_data, aes(x = x, y = avg_methyl, color = type)) +
-        geom_line() + # Add lines for each type
+        geom_line() +
         xlab("Distance from motif center") +
         ylab("Methylation difference (Observed / Expected)") +
         theme_classic() +
         ggtitle(paste("TF footprint difference for", motif)) +
-        scale_color_manual(values = obs_colors) + # Use the observed color vector
+        scale_color_manual(values = dynamic_colors) +
         theme(legend.position = "bottom") +
-        xlim(-200, 200) # Set the x-axis limits
+        xlim(-200, 200)
 
-      # Save the plot as a PDF in the specified directory
       ggsave(
         filename = file.path(save_dir, paste0("TF_footprint_diff_", motif, ".pdf")),
         plot = p_combined, width = 12, height = 8
@@ -139,17 +204,7 @@ plot_and_save_difference <- function(samples, save_dir, obs_colors) {
   }
 }
 
-# Define the observed colors for TB samples
-# Bcell_naive stays close in hue to Bcell_mem (blue family), Tcell keeps
-# the distinct orange used previously.
-obs_colors <- c(
-  "Observed divided Expected Bcell_mem"   = "#2C4C9B",
-  "Observed divided Expected Bcell_naive" = "#5B9BD5",
-  "Observed divided Expected Tcell"       = "#D66117"
-)
-
-
-# Generate and save plots for all samples with observed divided expected
-plot_and_save_difference(msites, plot_dir, obs_colors)
-
-#####################################################################
+# -------------------------------------------------------------------
+# Generate and Save Plots
+# -------------------------------------------------------------------
+plot_and_save_difference(msites, plot_dir, base_colors, dev_matrix, dev_groups)

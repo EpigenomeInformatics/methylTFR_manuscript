@@ -70,14 +70,20 @@ sample_names <- colnames(deviations)
 # Match and extract cellTypeGroup
 cell_types <- sannot$cellTypeGroup[match(sample_names, sannot$bedFile)]
 
-# Apply PCA
+# Remove deviations for samples in DISEASE groups
+disease_groups <- c("Multiple Myeloma", "Acute Lymphocytic Leukemia")
+keep <- !cell_types %in% disease_groups
+
+deviations   <- deviations[, keep]
+cell_types   <- cell_types[keep]
+
+# Apply PCA on the filtered data
 tdf <- as.data.frame(t(deviations))
 pca_result <- prcomp(tdf, center = FALSE, scale. = FALSE)
 tdf$groups <- cell_types
 
 # Apply remap
 tdf$groups <- group_remap[tdf$groups]
-
 
 fig_path <- paste0(plot_dir, "PCA_deviations_blueprint.pdf")
 pdf(fig_path, width = 10, height = 10)
