@@ -1,12 +1,17 @@
 #!/usr/bin/env Rscript
 
 #####################################################################
-# 08_mFoots_allcelltypes.R
-# Created by IBG on 07-09-2026
-# Combined methylation footprint plots for all cell type groups:
-#   Monocytes / Granulocytes / Bcell_mem / Bcell_naive / Tcell
-# Metric: Observed - Expected (subtraction, not ratio)
+# 09_EO_mFoots_allcelltypes.R
+# Created by IBG on 22-07-2026
+# Expected vs observed methylation footprint plots for all cell type
+# groups: Monocytes / Granulocytes / Bcell_mem / Bcell_naive / Tcell
+# Metric: raw Expected and Observed curves (one line each, per group)
 # Added mean deviation scores to legends (separated by cell type)
+#
+# This is the expected-vs-observed counterpart of 08_mFoots_allcelltypes.R
+# (which plots Observed - Expected). It shares the same 5-group data prep
+# and reuses the cached merged GRangesList, so run 08 first (or let this
+# script build it).
 #
 # Group mapping (from table(cts)):
 #   Bcell_mem    = Bcell_mem, Bcell_gc
@@ -35,15 +40,14 @@ suppressPackageStartupMessages({
 
 source("/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/src/run_mTFR_RnBeads.R", chdir = TRUE)
 main.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/"
-sample_dir <- paste0(main.dir, "RnBeads_291025/")
+sample_dir <- paste0(main.dir, "TB_RnBeads_271025/")
 debug <- paste0(main.dir, "debug/")
 if (!dir.exists(debug)) {
   dir.create(debug)
 }
 
-# Updated output folder date
 plot_dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/figures/blueprint/"
-plot_dir <- paste0(plot_dir, "mFoot_allcelltypes_220726/")
+plot_dir <- paste0(plot_dir, "EO_mFoot_allcelltypes_220726/")
 if (!dir.exists(plot_dir)) {
   dir.create(plot_dir)
 }
@@ -83,6 +87,7 @@ dev_groups <- matched_sannot$cellType5Group
 
 # -------------------------------------------------------------------
 # Load and Process RnBeads Methylation Data
+# (reuses the same cache as 08_mFoots_allcelltypes.R)
 # -------------------------------------------------------------------
 if (!file.exists(paste0(debug, "methylation_sites_merged_GRangesList_celltype5G_230726.rds"))) {
   logger.info("Loading RnBeads preprocessed data...")
@@ -104,9 +109,9 @@ if (!file.exists(paste0(debug, "methylation_sites_merged_GRangesList_celltype5G_
   # Drop samples using the DISEASE column and those outside the 5 target groups
   disease_idx <- which(as.character(rnb_set@pheno$DISEASE) != "None")
   group_drop_idx <- which(is.na(cellType5Group))
-  
+
   drop_idx <- unique(c(disease_idx, group_drop_idx))
-  
+
   if (length(drop_idx) > 0) {
     logger.info(paste0(
       length(drop_idx), " samples excluded (disease samples or outside the 5 target groups)."
@@ -136,7 +141,7 @@ tfs <- c(
   "SPIB", "SPI1", "EHF", "ELF3", "IKZF1", "TFAP2C", "TFAP2B", "TFAP2A", "TFAP2E", "TFAP2C",
   "TGIF1", "CREB3L4", "PBX3", "TAL1::TCF3", "MYOG", "ATOH1", "MYF5", "BHLHA15", "ZBTB18", "EBF3",
   "EBF1", "TFAP4", "NEUROD1", "VSX2", "EGR4", "DPRX", "SOX8", "CUX1", "CUX2", "TEAD3", "CEBPB",
-  "FOSL1::JUND","CEBPB"
+  "FOSL1::JUND", "CEBPB"
 )
 tf_bindsites <- tf_bindsites[names(tf_bindsites) %in% tfs]
 
@@ -148,27 +153,34 @@ distal <- if (motifSet == "JASPAR2020_distal") {
 }
 
 # -------------------------------------------------------------------
-# Plotting Function
+# Plotting Function (raw Expected vs Observed curves)
 # -------------------------------------------------------------------
+# Observed uses the saturated group colour (matching 08); Expected uses a
+# lighter tint of the same colour.
 base_colors <- c(
-  "Monocytes"    = "#C2703D", 
-  "Granulocytes" = "#E8A33D", 
-  "Bcell_mem"    = "#7B1E3D", 
-  "Bcell_naive"  = "#C46B8C", 
-  "Tcell"        = "#4FC3D9"  
+  "Expected_Monocytes"    = "#E3B393",
+  "Observed_Monocytes"    = "#C2703D",
+  "Expected_Granulocytes" = "#F4D19A",
+  "Observed_Granulocytes" = "#E8A33D",
+  "Expected_Bcell_mem"    = "#C08099",
+  "Observed_Bcell_mem"    = "#7B1E3D",
+  "Expected_Bcell_naive"  = "#E5B9C8",
+  "Observed_Bcell_naive"  = "#C46B8C",
+  "Expected_Tcell"        = "#B3E4EE",
+  "Observed_Tcell"        = "#4FC3D9"
 )
 
-plot_and_save_difference <- function(samples, save_dir, base_colors, dev_mat, dev_grps) {
+plot_and_save_eo <- function(samples, save_dir, base_colors, dev_mat, dev_grps) {
   for (motif in names(tf_bindsites)) {
-    if (!file.exists(file.path(save_dir, paste0("TF_footprint_diff_", motif, ".pdf")))) {
-      logger.start(paste("Processing motif", motif, "for all 5 groups"))
+    if (!file.exists(file.path(save_dir, paste0("TF_footprint_EO_", motif, ".pdf")))) {
+      logger.start(paste("Processing motif", motif, "for all 5 groups (expected vs observed)"))
 
       # Find matching row in deviation matrix
       motif_idx <- which(rownames(dev_mat) == motif)
       if (length(motif_idx) == 0) {
         motif_idx <- grep(paste0("\\b", motif, "\\b"), rownames(dev_mat), ignore.case = TRUE)
       }
-      
+
       # Calculate mean deviation for each cell type
       mean_devs <- list()
       for (g in names(samples)) {
@@ -179,7 +191,7 @@ plot_and_save_difference <- function(samples, save_dir, base_colors, dev_mat, de
         }
       }
 
-      # Generate plot data and calculate the difference
+      # Generate plot data (keeps both Expected and Observed rows)
       combined_data <- rbindlist(lapply(names(samples), function(cell_type) {
         plot_data <- plotExpectedFootprint(
           motif = motif,
@@ -191,24 +203,16 @@ plot_and_save_difference <- function(samples, save_dir, base_colors, dev_mat, de
           enhancer = distal,
           returnPlotData = TRUE
         )
-        
-        # Calculate observed minus expected methylation
-        difference_data <- plot_data$plotDF[, .(avg_methyl = avg_methyl[type == "Observed"] - avg_methyl[type == "Expected"]), by = x]
-        
+
+        difference_data <- plot_data$plotDF
+
         # Format the legend label to include the mean deviation score
         dev_val <- round(mean_devs[[cell_type]], 2)
         dev_str <- ifelse(is.na(dev_val), "N/A", dev_val)
-        label_str <- paste0(cell_type, " (Mean Dev: ", dev_str, ")")
-        
-        difference_data[, type := label_str]
-        difference_data[, original_group := cell_type]
 
-        # Normalize by subtracting the flanking-region baseline
-        flankNorm <- 30
-        flank <- max(abs(difference_data$x), na.rm = TRUE)
-        idx <- abs(difference_data$x) >= flank - flankNorm
-        norm_baseline <- mean(difference_data$avg_methyl[idx], na.rm = TRUE)
-        difference_data[, avg_methyl := avg_methyl - norm_baseline]
+        # original type is "Observed" or "Expected"
+        difference_data[, original_group := paste(type, cell_type, sep = "_")]
+        difference_data[, type := paste0(type, "_", cell_type, " (Mean Dev: ", dev_str, ")")]
 
         return(difference_data)
       }))
@@ -217,25 +221,25 @@ plot_and_save_difference <- function(samples, save_dir, base_colors, dev_mat, de
       # Map dynamic labels to base colors
       dynamic_colors <- setNames(base_colors[combined_data$original_group], combined_data$type)
       dynamic_colors <- dynamic_colors[!duplicated(names(dynamic_colors))]
-      
+
       # Ensure factor levels keep consistent legend order
       combined_data[, type := factor(type, levels = names(dynamic_colors))]
 
-      # Plot the combined difference data for all samples
-      logger.info("Plotting combined difference data for all samples")
+      # Plot the combined expected vs observed data for all samples
+      logger.info("Plotting expected and observed methylation for all groups")
       p_combined <- ggplot(combined_data, aes(x = x, y = avg_methyl, color = type)) +
-        geom_line() + 
+        geom_line() +
         xlab("Distance from motif center") +
-        ylab("Methylation difference (Observed - Expected)") +
+        ylab("Average methylation") +
         theme_classic() +
-        ggtitle(paste("TF footprint difference for", motif)) +
-        scale_color_manual(values = dynamic_colors) + 
+        ggtitle(paste("Expected vs observed footprints for", motif)) +
+        scale_color_manual(values = dynamic_colors) +
         theme(legend.position = "bottom") +
-        xlim(-200, 200) 
+        xlim(-200, 200)
 
       # Save the plot as a PDF
       ggsave(
-        filename = file.path(save_dir, paste0("TF_footprint_diff_", motif, ".pdf")),
+        filename = file.path(save_dir, paste0("TF_footprint_EO_", motif, ".pdf")),
         plot = p_combined, width = 12, height = 8
       )
     }
@@ -245,4 +249,4 @@ plot_and_save_difference <- function(samples, save_dir, base_colors, dev_mat, de
 # -------------------------------------------------------------------
 # Generate and Save Plots
 # -------------------------------------------------------------------
-plot_and_save_difference(msites, plot_dir, base_colors, dev_matrix, dev_groups)
+plot_and_save_eo(msites, plot_dir, base_colors, dev_matrix, dev_groups)
