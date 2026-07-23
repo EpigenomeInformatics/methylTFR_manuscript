@@ -40,7 +40,7 @@ suppressPackageStartupMessages({
 
 source("/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/src/run_mTFR_RnBeads.R", chdir = TRUE)
 main.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/"
-sample_dir <- paste0(main.dir, "TB_RnBeads_271025/")
+sample_dir <- paste0(main.dir, "RnBeads_291025/")
 debug <- paste0(main.dir, "debug/")
 if (!dir.exists(debug)) {
   dir.create(debug)
