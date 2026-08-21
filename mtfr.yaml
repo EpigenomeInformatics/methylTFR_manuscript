@@ -1,0 +1,24 @@
+name: mtfr
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - r-base=4.3.*
+  - r-devtools
+  - r-roxygen2
+  - r-pkgdown
+  - r-biocmanager
+  - r-data.table
+  - r-ggplot2
+  - r-logger
+  - r-matrixstats
+  - r-r.utils
+  - bioconductor-summarizedexperiment
+  - bioconductor-biocgenerics
+  - bioconductor-delayedarray
+  - bioconductor-genomicranges
+  - bioconductor-hdf5array
+  - bioconductor-iranges
+  - bioconductor-s4vectors
+  - bioconductor-annotationdbi
