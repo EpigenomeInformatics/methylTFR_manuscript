@@ -23,13 +23,6 @@ motifSetList <- c("jaspar2020", "jaspar2020_distal")
 num.cores <- 32
 chunk.size <- 10
 
-# Directory where the annotation resources are stored locally
-annotation.dir <- "/icbb/projects/share/annotations/methylTFRAnnotationHg38/inst/extdata"
-if (!dir.exists(annotation.dir)) {
-  stop("Annotation directory does not exist: ", annotation.dir)
-}
-options(methylTFRAnnotationHg38.datadir = annotation.dir)
-
 # Directory where the RnBeads output was written to by 01
 analysis.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/"
 rnb.dir <- file.path(analysis.dir, "RnBeads_230826")

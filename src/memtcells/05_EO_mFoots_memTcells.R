@@ -50,13 +50,6 @@ base_colors <- c(
   "Observed_TEMRA" = "#898FB5"
 )
 
-# Directory where the annotation resources are stored locally
-annotation.dir <- "/icbb/projects/share/annotations/methylTFRAnnotationHg38/inst/extdata"
-if (!dir.exists(annotation.dir)) {
-  stop("Annotation directory does not exist: ", annotation.dir)
-}
-options(methylTFRAnnotationHg38.datadir = annotation.dir)
-
 # Distal regulatory regions, kept outside the annotation package
 distal.file <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFRAnnotationHg38_old/inst/extdata/distal_regions.RDS"
 

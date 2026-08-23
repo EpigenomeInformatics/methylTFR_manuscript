@@ -5,7 +5,7 @@
 # created on 08-11-2025 by Irem B Gunduz
 # Updated by IBG on 23-08-2026
 # Methylation footprints of selected TFs for the CD4 memory T cell
-# subtypes. Metric: Observed / Expected, normalised by the flanks
+# subtypes. Metric: Observed - Expected, normalised by the flanks
 #####################################################################
 
 suppressPackageStartupMessages({
@@ -46,13 +46,6 @@ base_colors <- c(
   "EM" = "#43B6C4",
   "TEMRA" = "#898FB5"
 )
-
-# Directory where the annotation resources are stored locally
-annotation.dir <- "/icbb/projects/share/annotations/methylTFRAnnotationHg38/inst/extdata"
-if (!dir.exists(annotation.dir)) {
-  stop("Annotation directory does not exist: ", annotation.dir)
-}
-options(methylTFRAnnotationHg38.datadir = annotation.dir)
 
 # Distal regulatory regions, kept outside the annotation package
 distal.file <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFRAnnotationHg38_old/inst/extdata/distal_regions.RDS"
@@ -157,16 +150,16 @@ if (motifSet == "jaspar2020_distal") {
 }
 
 #####################################################################
-# Plot the observed over expected footprints
+# Plot the observed minus expected footprints
 #####################################################################
 
-plot_and_save_ratio <- function(samples, save_dir) {
+plot_and_save_difference <- function(samples, save_dir) {
   for (motif in names(tf_bindsites)) {
     out.file <- file.path(save_dir, paste0("TF_footprint_diff_", motif, ".pdf"))
     if (file.exists(out.file)) next
 
     log_info("Processing motif ", motif, " for ", length(samples), " subtypes")
-    labels <- setNames(paste("Observed divided Expected", names(samples)), names(samples))
+    labels <- setNames(paste("Observed minus Expected", names(samples)), names(samples))
 
     per_group <- lapply(names(samples), function(cell_type) {
       plot_data <- tryCatch(
@@ -189,20 +182,23 @@ plot_and_save_ratio <- function(samples, save_dir) {
         return(NULL)
       }
 
-      # Observed over expected methylation
-      ratio_data <- plot_data[, .(
-        avg_methyl = avg_methyl[type == "Observed"] / avg_methyl[type == "Expected"]
+      # Observed minus expected methylation
+      difference_data <- plot_data[, .(
+        avg_methyl = avg_methyl[type == "Observed"] - avg_methyl[type == "Expected"]
       ), by = x]
 
-      # Normalise the ratio against the flanking region, where it is near 1
-      flank <- max(abs(ratio_data$x), na.rm = TRUE)
-      idx <- abs(ratio_data$x) >= flank - flank.norm
-      norm_factor <- mean(ratio_data$avg_methyl[idx], na.rm = TRUE)
-      ratio_data[, avg_methyl := avg_methyl / norm_factor]
+      # Normalise by subtracting the flanking region baseline, which is on
+      # the same scale as the difference itself. Dividing by that baseline
+      # would rescale the curve by an arbitrary factor, because the mean of
+      # a difference over the flanks sits near zero.
+      flank <- max(abs(difference_data$x), na.rm = TRUE)
+      idx <- abs(difference_data$x) >= flank - flank.norm
+      norm_baseline <- mean(difference_data$avg_methyl[idx], na.rm = TRUE)
+      difference_data[, avg_methyl := avg_methyl - norm_baseline]
 
-      ratio_data[, type := labels[[cell_type]]]
-      ratio_data[, original_group := cell_type]
-      ratio_data
+      difference_data[, type := labels[[cell_type]]]
+      difference_data[, original_group := cell_type]
+      difference_data
     })
     per_group <- Filter(Negate(is.null), per_group)
     if (length(per_group) == 0) {
@@ -219,7 +215,7 @@ plot_and_save_ratio <- function(samples, save_dir) {
     p_combined <- ggplot(combined_data, aes(x = x, y = avg_methyl, color = type)) +
       geom_line() +
       xlab("Distance from motif center") +
-      ylab("Methylation difference (Observed / Expected)") +
+      ylab("Methylation difference (Observed - Expected)") +
       theme_classic() +
       ggtitle(paste("TF footprint difference for", motif)) +
       scale_color_manual(values = dynamic_colors) +
@@ -231,5 +227,5 @@ plot_and_save_ratio <- function(samples, save_dir) {
   }
 }
 
-plot_and_save_ratio(msites, plot.dir)
-log_success("Finished the observed over expected footprints")
+plot_and_save_difference(msites, plot.dir)
+log_success("Finished the observed minus expected footprints")

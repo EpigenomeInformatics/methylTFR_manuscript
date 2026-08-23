@@ -18,6 +18,7 @@ data/
 
 # Output files from R CMD check
 /*.Rcheck/
+src/methylTFR_tmp/*
 
 # RStudio files
 .Rproj.user/
