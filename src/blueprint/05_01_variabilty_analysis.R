@@ -14,12 +14,11 @@ suppressPackageStartupMessages({
 })
 
 
-set.seed(12)
+set.seed(13)
 
 # Set up
-plot_dir <- "/icbb/projects/nitschre/methylTFR/figures/blueprint/Heatmaps_differentials/"
-results_dir <- "/icbb/projects/nitschre/methylTFR/r_objects/"
-dir.create(plot_dir, recursive = TRUE, showWarnings = FALSE)
+plot_dir <- "/scratch/icbb/regina/methylTFR_manuscript/figures/blueprint/"
+results_dir <- "/scratch/icbb/regina/data/blueprint/"
 
 # Scripts
 source("/icbb/projects/nitschre/methylTFR/scripts/other/variability_analysis.R")
@@ -37,35 +36,32 @@ cell_type_colors <- c(
   "thymocyte" = "#74c476"
 )
 
-
 # Loading deviations scores and remove problematic sample
-deviations_raw <- readRDS("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/mTFR_devs_121125/JASPAR2020_distal_deviations.RDS")
-deviations_raw <- deviations_raw[,!colnames(deviations_raw) %in% "Bcell_naive_VB_NBC_NC11_83.bed"]
-deviations <- deviations(deviations_raw)
+dev_obj <- readRDS("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/mTFR_devs_121125/JASPAR2020_distal_deviations.RDS")
+dev_obj <- dev_obj[,!colnames(dev_obj) %in% "Bcell_naive_VB_NBC_NC11_83.bed"]
+dev_obj <- dev_obj[,colnames(dev_obj) %in% c("plasma", "gran", "Bcell", "DC","Mf","mono","Tcell","thymocyte")] # Keep only samples that have at least 5 samples
+
+deviations <- deviations(dev_obj)
 
 # Change sample names to cellTypeGroup
-annot <- read.csv("/icbb/projects/nitschre/methylTFR/sample_annotation/samples.tsv", sep="\t")
+annot <- read.csv("/scratch/icbb/regina/methylTFR_manuscript/data/blueprint/RnBeads/reports/data_import_data/annotation.csv", stringsAsFactors = FALSE)
 annot <- subset(annot, bedFile %in% colnames(deviations))
 
+# Match order of annotation samples with deviation matrix and remove "other" sample
 deviations <- deviations[,match(annot$bedFile, colnames(deviations))]
 colnames(deviations) <- annot$cellTypeGroup
-deviations <-deviations[,!colnames(deviations) %in% c("other")]
-
-deviations_raw <- deviations_raw[,match(annot$bedFile, colnames(deviations_raw))] 
-colnames(deviations_raw) <- annot$cellTypeGroup 
-deviations_raw <-deviations_raw[,!colnames(deviations_raw) %in% c("other")]
+deviations <- deviations[,!colnames(deviations) %in% c("other")]
 
 # Compute zscores columnwise
-zscores <- computeColZScore(deviations)
+zscores_col <- computeColZScore(deviations)
 
 # Perform variability analysis
 if(file.exists(paste0(results_dir, "variability_bp.RDS"))) {  
   var <- readRDS(paste0(results_dir, "variability_bp.RDS"))
 } else {
-  var <-computeZScoreVariability(zscores)
+  var <-computeZScoreVariability(zscores_col)
   saveRDS(var, file=paste0(results_dir, "variability_bp.RDS"))
 }
-
 
 # Filter for  pval < .05 and keep top 50 with smallest pvalue
 top50 <- var %>%
@@ -73,18 +69,15 @@ top50 <- var %>%
   arrange(desc(variability)) %>%
   head(50)
 
-# Keep only samples that have at least 5 samples
-deviations_raw_filtered <- deviations_raw[,colnames(deviations_raw) %in% c("plasma", "gran", "Bcell", "DC","Mf","mono","Tcell","thymocyte")]
-
-# Get Z-scores
-zscores <- deviationZScores(deviations_raw_filtered)
-
 # Filter for TFs that are in the top 50 variables
-zscores_filtered <- zscores[rownames(zscores) %in% c(rownames(top50)),]
+deviations_filtered <- deviations[rownames(deviations) %in% c(rownames(top50)),]
+
+# Calculate Row Zscores
+zscores <-  methylTFR:::computeRowZScore(deviations_filtered)
 
 # Heatmap Annotation at the top of the plot
 ha <- HeatmapAnnotation(
-  celltypes=colnames(deviations_raw_filtered),
+  celltypes=colnames(zscores),
   col = list(celltypes = cell_type_colors)
 )
 
@@ -95,11 +88,11 @@ col <- muRtools::colpal.cont(100, "cptcity.arendal_temperature")
 column_order <- c("megK", "eryt", "gran", "mono", "Mf", "DC", "osteoclast", "NK", "Tcell", "thymocyte", "Bcell", "plasma")
 
 # Column split factor
-group <- colnames(deviations_raw_filtered)
+group <- colnames(zscores)
 column_split_factor <- factor(group, levels=column_order)
 
 # Clipped matrix
-zscores_clipped <- pmax(pmin(zscores_filtered,2),-2)
+zscores_clipped <- pmax(pmin(zscores,2),-2)
 
 # Plot heatmap
 ht <- Heatmap(

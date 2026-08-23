@@ -53,32 +53,40 @@ group_remap <- c(
   "thymocyte" = "Thymocyte"
 )
 
-source("/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/src/utils.R")
-
 # Paths
-plot_dir <- "/icbb/projects/nitschre/methylTFR/figures/blueprint/PCA/"
+plot_dir <- "/scratch/projects/regina/methylTFR/figures/blueprint/"
 if (!dir.exists(plot_dir)) dir.create(plot_dir)
 
 # Load data
-deviations <- readRDS("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/mTFR_devs_121125/JASPAR2020_distal_deviations.RDS")
-deviations_noCorrection <- readRDS("/icbb/projects/nitschre/methylTFR/r_objects/JASPAR2020_distal_deviations_bp_noCorrection.RDS")
-deviations <- deviations(deviations)
-deviations_noCorrection <- deviations(deviations_noCorrection)
+dev_obj <- readRDS("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/mTFR_devs_121125/JASPAR2020_distal_deviations.RDS")
+dev_obj_noCorrection <- readRDS("/icbb/projects/nitschre/methylTFR/r_objects/JASPAR2020_distal_deviations_bp_noCorrection.RDS")
 
-sannot <- read.csv("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/RnBeads_291025/reports/data_import_data/annotation.csv", stringsAsFactors = FALSE)
+deviations <- deviations(dev_obj)
+deviations_noCorrection <- deviations(dev_obj_noCorrection)
+
+# Read annotation
+sannot <- read.csv("/scratch/icbb/regina/methylTFR_manuscript/data/blueprint/RnBeads/reports/data_import_data/annotation.csv", stringsAsFactors = FALSE)
 
 # Ensure consistent character types
 sannot$bedFile <- as.character(sannot$bedFile)
 sample_names <- colnames(deviations)
 
-# Match and extract cellTypeGroup
-cell_types <- sannot$cellTypeGroup[match(sample_names, sannot$bedFile)]
+# Align annotations with the deviation matrix columns
+matched_sannot <- sannot[match(sample_names, sannot$bedFile), ]
 
-# Remove 'other' cell types
-rm <- which(cell_types == "other")
-deviations <- deviations[,-rm]
-deviations_noCorrection <- deviations_noCorrection[,-rm]
-cell_types <- cell_types[-rm]
+# Extract variables from the correctly ordered annotation
+DISEASE <- matched_sannot$DISEASE
+
+# Define cell_types (using cellTypeGroup here, adjust to cellTypeShort if needed)
+cell_types <- matched_sannot$cellTypeGroup 
+
+# Identify healthy samples based on DISEASE column
+keep <- (DISEASE == "None") & (cell_types != "other")
+
+# Filter out the disease samples
+deviations <- deviations[, keep]
+deviations_noCorrection <- deviations_noCorrection[,keep]
+cell_types <- cell_types[keep]
 
 #####################################################################
 # Plot pie chart for cell types
@@ -126,7 +134,7 @@ lapply(names(deviations_list), function(name){
   tdf$groups <- group_remap[tdf$groups]
 
   # Plot
-  fig_path <- paste0(plot_dir, name, ".pdf")
+  fig_path <- paste0(plot_dir,"PCA/", name, ".pdf")
   pdf(fig_path, width = 10, height = 10)
   p <- autoplot(pca_result,
       data = tdf,
@@ -164,7 +172,7 @@ tdf_tiling$groups <- cell_types
 # Apply remap
 tdf_tiling$groups <- group_remap[tdf_tiling$groups]
 
-fig_path <- paste0(plot_dir, "PCA_tiling_blueprint.pdf")
+fig_path <- paste0(plot_dir,"PCA/", "PCA_tiling_blueprint.pdf")
 pdf(fig_path, width = 10, height = 10)
 
 # Plot PCA for tiling1kb
@@ -191,7 +199,7 @@ tdf_distal$groups <- cell_types
 # Apply remap
 tdf_distal$groups <- group_remap[tdf_distal$groups]
 
-fig_path <- paste0(plot_dir, "PCA_distal_blueprint.pdf")
+fig_path <- paste0(plot_dir,"PCA/", "PCA_distal_blueprint.pdf")
 pdf(fig_path, width = 10, height = 10)
 
 # Plot PCA for distal

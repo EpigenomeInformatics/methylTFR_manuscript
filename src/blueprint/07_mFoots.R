@@ -12,33 +12,29 @@ suppressPackageStartupMessages({
     library(methylTFRAnnotationHg38)
     library(dplyr)
 })
-set.seed(42)
-
-source("/icbb/projects/nitschre/methylTFR/scripts/memoryTcells/plots.R")
-source("/icbb/projects/nitschre/methylTFR/R/plot_helpers.R")
-source("/icbb/projects/nitschre/methylTFR/R/expected_deviations.R")
+set.seed(13)
 
 # Set the paths
-plot_dir <- "/icbb/projects/nitschre/methylTFR/figures/blueprint/TF_footprint_diffmotifs/"
+plot_dir <- "/scratch/icbb/regina/methylTFR_manuscript/figures/blueprint/TF_footprint_diffmotifs/"
 if (!dir.exists(plot_dir)) {
     dir.create(plot_dir, recursive = TRUE)
 }
-data_dir <- "/icbb/projects/nitschre/methylTFR/r_objects/"
+data_dir <- "/scratch/icbb/regina/data/blueprint/"
 if (!dir.exists(data_dir)) {
     dir.create(data_dir, recursive = TRUE)
 }
 
 if(!file.exists(paste0(data_dir,"bp_msites.RDS"))){
-    # Import Rnbeads object
-rnbset <- load.rnb.set("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/RnBeads_291025/reports/data_import_data/rnb.set_preprocessed")
-# Merging cell type replicates
-rnbset_merged <- mergeSamples(rnbset, "cellTypeGroup")
+  # Import Rnbeads object
+  rnbset <- load.rnb.set("/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/RnBeads_291025/reports/data_import_data/rnb.set_preprocessed")
+  # Merging cell type replicates
+  rnbset_merged <- mergeSamples(rnbset, "cellTypeGroup")
 
-# Get the methylation sites as GRangesList
-msites <- rnb.RnBSet.to.GRangesList(rnbset_merged)
-saveRDS(msites, file =paste0(data_dir,"bp_msites.RDS"))
+  # Get the methylation sites as GRangesList
+  msites <- rnb.RnBSet.to.GRangesList(rnbset_merged)
+  saveRDS(msites, file =paste0(data_dir,"bp_msites.RDS"))
 }else{
-msites <- readRDS(paste0(data_dir,"bp_msites.RDS"))
+  msites <- readRDS(paste0(data_dir,"bp_msites.RDS"))
 }
 
 # Plot only NK, Tcells, mono and Bcell

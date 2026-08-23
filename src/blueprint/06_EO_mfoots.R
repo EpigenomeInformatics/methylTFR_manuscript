@@ -3,7 +3,7 @@
 #####################################################################
 # 06_EO_mfoots.R
 # Created by IBG on 07-11-2025
-# Created for generating expected vs observed methylation footprint plots
+# Created for generating expected vs observed methylation footprint plots (T vs B cells)
 #####################################################################
 
 set.seed(42)
@@ -19,30 +19,27 @@ suppressPackageStartupMessages({
   library(RnBeads)
 })
 
-source("/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/src/run_mTFR_RnBeads.R", chdir = TRUE)
-main.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/"
-sample_dir <- paste0(main.dir, "TB_RnBeads_271025/")
-debug <- paste0(main.dir, "debug/")
+main.dir <- "/scratch/icbb/regina/data/blueprint/"
+sample_dir <- paste0(main.dir, "TB_RnBeads/")
 
-if(!dir.exists(debug)){dir.create(debug)}
 plot_dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/figures/blueprint/"
 plot_dir <- paste0(plot_dir, "EO_mFoot/")
 if(!dir.exists(plot_dir)){dir.create(plot_dir)}
 
 if(!file.exists(paste0(debug, "methylation_sites_merged_GRangesList.rds"))){
 
-# Load RnBeads preprocessed data
-rnb_set <- RnBeads::load.rnb.set(paste0(sample_dir, "reports/data_import_data/rnb.set_preprocessed"))
+  # Load RnBeads preprocessed data
+  rnb_set <- RnBeads::load.rnb.set(paste0(sample_dir, "reports/data_import_data/rnb.set_preprocessed"))
 
-# Merging cell type replicates
-rnbset_merged <- mergeSamples(rnb_set, "cellTypeGroup")
+  # Merging cell type replicates
+  rnbset_merged <- mergeSamples(rnb_set, "cellTypeGroup")
 
-# Get the methylation sites as GRangesList
-msites <- rnb.RnBSet.to.GRangesList(rnbset_merged)
-saveRDS(msites, paste0(debug, "methylation_sites_merged_GRangesList.rds"))
+  # Get the methylation sites as GRangesList
+  msites <- rnb.RnBSet.to.GRangesList(rnbset_merged)
+  saveRDS(msites, paste0(main, "methylation_sites_merged_GRangesList.rds"))
 
 }else{
-    msites <- readRDS(paste0(debug, "methylation_sites_merged_GRangesList.rds"))
+  msites <- readRDS(paste0(main, "methylation_sites_merged_GRangesList.rds"))
 }
 
 # Prepare motif data
