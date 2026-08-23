@@ -18,14 +18,15 @@ suppressPackageStartupMessages({
   library(viridis)
   library(methylTFR)
   library(ComplexHeatmap)
+  library(RColorBrewer)
 })
 set.seed(13)
 
-plot_dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/figures/memtcells"
+plot_dir <- "/scratch/icbb/regina/methylTFR_manuscript/figures/memTcells"
 if (!dir.exists(plot_dir)) {
   dir.create(plot_dir, recursive = TRUE)
 }
-mem_tcell <- "/scratch/icbb/igunduz/methylTFR_manuscript/memTcell"
+mem_tcell <- "/scratch/icbb/regina/data/memTcells"
 if (!dir.exists(mem_tcell)) {
   dir.create(mem_tcell, recursive = TRUE)
 }
@@ -37,8 +38,8 @@ cut_mean_diff <- 0.0
 #########################################################################
 
 # Loading deviations scores
-deviations_raw <- readRDS("/scratch/icbb/igunduz/methylTFR_manuscript/memoryTcells/mTFR_devs_071125/jaspar2020_distal_deviations.RDS")
-deviations <- deviations(deviations_raw)
+dev_obj <- readRDS("/scratch/icbb/igunduz/methylTFR_manuscript/memoryTcells/mTFR_devs_071125/jaspar2020_distal_deviations.RDS")
+deviations <- deviations(dev_obj)
 
 ### EM vs TN
 # Subsetting deviation matrix to only naive and EM cells
@@ -75,7 +76,7 @@ saveRDS(diff_cm, file = file.path(mem_tcell, "diff_cm_jaspar2020.RDS"))
 diff_cm_filtered <-diff_cm[abs(diff_cm[,"mean_difference"]) > cut_mean_diff & diff_cm[,"p_value_adjusted"] < cut_padj,]
 
 # Get Z-scores
-zscores <- deviationZScores(deviations_raw)
+zscores <- deviationZScores(dev_obj)
 
 # Filter for diff TFs
 zscores_filtered <- zscores[rownames(zscores) %in% c(rownames(diff_em_filtered), rownames(diff_cm_filtered)), ]
@@ -118,7 +119,7 @@ matched_rna_files <- rna_files[rna_sample_ids %in% meth_sample_ids]
 rna_list <- lapply(matched_rna_files, function(file) {
   df <- read.delim(file, stringsAsFactors = FALSE)
   sample_id <- tools::file_path_sans_ext(basename(file))
-  df <- df[, c("gene_id", "expected_count")]
+  df <- df[, c("gene_id", "TPM")]
   colnames(df)[2] <- sample_id
   return(df)
 })
@@ -147,48 +148,56 @@ expr <- as.data.frame(expr_matrix)
 rownames(expr) <- make.unique(expr$gene_short_name)
 expr <- expr[, !colnames(expr) %in% c("gene_id_clean", "gene_id", "gene_short_name", "tracking_id")]
 
-saveRDS(expr, file = file.path(mem_tcell, "expr_tf_activity_memTcells.RDS"))
+saveRDS(expr, file = file.path(mem_tcell, "expr_tf_activity_memTcells_TPM.RDS"))
 
-### Heatmap containing differential Tfs from mtfr
-mtfr_tfs <- readRDS(file.path(mem_tcell, "zscores_diffmotifs_top50_jaspar2020.RDS"))
-expr_activity_filtered <- expr[rownames(expr) %in% rownames(mtfr_tfs), ]
-mtfr_tfs <- mtfr_tfs[rownames(mtfr_tfs) %in% rownames(expr_activity_filtered), ]
+#########################################################################
+# Heatmaps
+#########################################################################
+## RNA heatmap
+# Subset expr matrix to only contain differential tfs
+expr_activity_filtered <- expr[rownames(expr) %in% rownames(zscores_filtered_top50), ]
+zscores_filtered_top50 <- zscores_filtered_top50[rownames(zscores_filtered_top50) %in% rownames(expr_activity_filtered), ]
 
 # Change sample names
 colnames(expr_activity_filtered) <- c("Hf03_CM", "Hf03_EM", "Hf03_TN", "Hf04_CM", "Hf04_EM", "Hf04_TN")
 
-# Rowwise zscores of gex data
-expr_activity_filtered <- methylTFR:::computeRowZScore(as.matrix(expr_activity_filtered))
+# Log transformation and rowwise zscores of gex data
+expr_log <- log2(expr_activity_filtered+1)
+expr_log_z <- methylTFR:::computeRowZScore(as.matrix(expr_log))
 
 ha <- HeatmapAnnotation(
   celltypes = c("CM", "EM", "TN", "CM", "EM", "TN"),
-  col = list(celltypes = c("TN" = "#C8E0B4", "CM" = "#4492C6", "EM" = "#43B6C4"))
+  col = list(celltypes = c("TN" = "#BFE8AD", "CM" = "#34B46D", "EM" = "#27501E"))
 )
 
-path <- file.path(plot_dir, "expr_tf_activity_memTcells_mtfr_tfs.pdf")
+# Set color palette
+col <- brewer.pal(11, "PRGn")
 col_fun <- colorRamp2(
-  seq(-2, 2, length.out = 70),
-  viridis(70)
-)
+  seq(-2, 2, length.out = 11),
+  col)
+
 
 # Define sample types for column splitting
-sample_types <- sub("^.*_", "", colnames(expr_activity_filtered))
-sample_types <- factor(sample_types, levels = c("CM", "EM", "TN"))
+sample_types <- sub("^.*_", "", colnames(expr_log_z))
+sample_types <- factor(sample_types, levels = c("TN", "CM", "EM"))
 
-hm <- Heatmap(
-  expr_activity_filtered,
+# Heatmap
+path <- file.path(plot_dir, "expr_tf_activity_memTcells_mtfr_tfs.pdf")
+rna_hm <- Heatmap(
+  expr_log_z,
   column_names_gp = gpar(fontsize = 9),
   top_annotation = ha,
   column_title = "RNA TF Expression",
   show_row_names = TRUE,
+  show_column_names = FALSE,
   column_split = sample_types,
   cluster_columns = TRUE,
-  cluster_column_slices = TRUE,
+  cluster_column_slices = FALSE,
   column_order = NULL,
-  col = col_fun
+  col = col_fun,
 )
 pdf(path, width = 10, height = 15)
-ht <- draw(hm)
+ht <- draw(rna_hm)
 dev.off()
 
 # Get the row order from heatmap
@@ -201,41 +210,38 @@ diffs_mtfr_tfs <- unique(c(rownames(diff_em_filtered), rownames(diff_cm_filtered
 tf_activity_final <- expr_activity_filtered[row_order_vector, ]
 saveRDS(tf_activity_final, file = file.path(mem_tcell, "expr_tf_activity_memTcells_mtfr_tfs.RDS"))
 
-#########################################################################
-# methylTFR heatmap for the differential TFs
-#########################################################################
-
+## MTFR Heatmap
 # load zscores for differential motifs
-zscores_diffmotifs <- readRDS(file.path(mem_tcell, "zscores_diffmotifs_top50_jaspar2020.RDS"))
-zscores_diffmotifs <- zscores_diffmotifs[row_order_vector, ]
-colnames(zscores_diffmotifs) <- c(
+zscores_filtered_top50 <- zscores_filtered_top50[row_order_vector, ]
+colnames(zscores_filtered_top50) <- c(
   "Hf03_CM", "Hf03_EM", "Hf03_TN", "Hf04_CM", "Hf04_EM",
   "Hf04_TN", "Hf04_TEMRA"
 )
 # Remove TEMRA
-zscores_diffmotifs <- zscores_diffmotifs[, !colnames(zscores_diffmotifs) %in% c("Hf04_TEMRA")]
+zscores_filtered_top50 <- zscores_filtered_top50[, !colnames(zscores_filtered_top50) %in% c("Hf04_TEMRA")]
 
 # Heatmap annotation
 ha <- HeatmapAnnotation(
   celltypes = c("CM", "EM", "TN", "CM", "EM", "TN"),
-  col = list(celltypes = c("TN" = "#C8E0B4", "CM" = "#4492C6", "EM" = "#43B6C4"))
+  col = list(celltypes = c("TN" = "#C8E0B4", "CM" = "#34B46D", "EM" = "#27501E"))
 )
 
 # Define sample types for column splitting
-sample_types <- sub("^.*_", "", colnames(zscores_diffmotifs))
+sample_types <- sub("^.*_", "", colnames(zscores_filtered_top50))
 sample_types <- factor(sample_types, levels = c("CM", "EM", "TN"))
 
 path <- file.path(plot_dir, "mtfr_zscores_diffmotifs_memTcells.pdf")
 hm <- Heatmap(
-  zscores_diffmotifs,
+  zscores_filtered_top50,
   column_names_gp = gpar(fontsize = 9),
   top_annotation = ha,
   column_title = "methylTFR Z-scores",
   show_row_names = TRUE,
+  show_column_names = FALSE,
   column_split = sample_types,
   cluster_columns = TRUE,
   cluster_rows = FALSE,
-  cluster_column_slices = TRUE,
+  cluster_column_slices = FALSE,
   column_order = NULL
 )
 pdf(path, width = 10, height = 15)
@@ -247,13 +253,13 @@ dev.off()
 #########################################################################
 
 # Sort to match the order of methylTFR
-zmat <- tf_activity_final[, colnames(zscores_diffmotifs)]
-mtfr_devs <- zscores_diffmotifs[row_order_vector, ]
+zmat <- tf_activity_final[, colnames(zscores_filtered_top50)]
+mtfr_devs <- zscores_filtered_top50[row_order_vector, ]
 zmat <- zmat[row_order_vector, ]
 
 # Calculate row-wise correlation
 row_correlation <- sapply(seq_len(nrow(zmat)), function(i) {
-  cor(zmat[i, ], mtfr_devs[i, ]) # ), use = "complete.obs") 
+  cor(as.numeric(zmat[i, ]), mtfr_devs[i, ]) # ), use = "complete.obs") 
 })
 
 # Convert to a data frame for better readability
@@ -283,7 +289,7 @@ draw(cm)
 dev.off()
 
 #########################################################################
-# Mean difference plots for EM vs TN and CM vs TN
+# L2FC from LOLA vs mean difference from methylTFR
 #########################################################################
 cut_mean_diff <- 0.1
 cut_padj <- 0.05
@@ -318,72 +324,7 @@ group_means_cm <- group_means_cm %>%
   mutate(TF = rownames(diff_cm)) %>%
   left_join(diff_cm, by = "motifs")
 
-# combine the results
-comb_df <- merge(group_means_em, group_means_cm, by = "motifs", suffixes = c("_em", "_cm"))
 
-# Add differential identifiers with three groups
-comb_df$isDiff <- dplyr::case_when(
-  abs(comb_df$mean_difference_em) > cut_mean_diff & comb_df$p_value_adjusted_em < cut_padj &
-    abs(comb_df$mean_difference_cm) > cut_mean_diff & comb_df$p_value_adjusted_cm < cut_padj ~ "Differential Both",
-  abs(comb_df$mean_difference_em) > cut_mean_diff & comb_df$p_value_adjusted_em < cut_padj ~ "Differential EM",
-  abs(comb_df$mean_difference_cm) > cut_mean_diff & comb_df$p_value_adjusted_cm < cut_padj ~ "Differential CM",
-  TRUE ~ "Not Differential"
-)
-
-cor_val <- cor(comb_df$CM, comb_df$EM, method = "pearson", use = "complete.obs")
-plot_path <- file.path(plot_dir, "mean_difference_em_vs_cm_memTcells.pdf")
-
-# Reset label column
-comb_df$label <- NA
-
-# Top 20 Differential EM
-em_rows <- which(comb_df$isDiff == "Differential EM")
-top_em_idx <- order(abs(comb_df$mean_difference_em[em_rows]), decreasing = TRUE)[1:min(20, length(em_rows))]
-comb_df$label[em_rows[top_em_idx]] <- comb_df$TF_em[em_rows[top_em_idx]]
-
-# Top 20 Differential CM
-cm_rows <- which(comb_df$isDiff == "Differential CM")
-top_cm_idx <- order(abs(comb_df$mean_difference_cm[cm_rows]), decreasing = TRUE)[1:min(20, length(cm_rows))]
-comb_df$label[cm_rows[top_cm_idx]] <- comb_df$TF_cm[cm_rows[top_cm_idx]]
-# Subset only rows to be labeled
-label_df <- comb_df[!is.na(comb_df$label), ]
-p <- ggplot(comb_df, aes(x = CM, y = EM, color = isDiff)) +
-  geom_point(size = 2, alpha = 0.8) +
-  scale_color_manual(
-    values = c(
-      "Differential CM" = "#377EB8",
-      "Differential EM" = "#E41A1C",
-      "Differential Both" = "#4DAF4A",
-      "Not Differential" = "grey70"
-    )
-  ) +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "black", linewidth = 0.3) +
-  geom_vline(xintercept = 0, linetype = "dashed", color = "black", linewidth = 0.3) +
-  labs(
-    x = "Mean difference (CM)",
-    y = "Mean difference (EM)",
-    color = "Differential status"
-  ) +
-  theme_classic(base_size = 13) +
-  theme(legend.position = "top") +
-  annotate("text", x = Inf, y = Inf, label = paste0("r = ", round(cor_val, 2)),
-           hjust = 1.1, vjust = 1.5, size = 4.5, fontface = "bold") +
-  geom_text_repel(
-    data = label_df,
-    aes(label = label, color = isDiff),
-    size = 5,
-    box.padding = 0.3,
-    point.padding = 0.3,
-    max.overlaps = Inf,
-    segment.color = NA  # removes the lines
-  )
-
-ggsave(plot_path, p, width = 10, height = 10)
-
-
-#########################################################################
-# L2FC from LOLA vs mean difference from methylTFR
-#########################################################################
 # Load LOLA results
 res_lola <- readRDS("/scratch/icbb/igunduz/methylTFR_manuscript/memoryTcells/reports/differential_methylation_data/differential_rnbDiffMeth/TF_motifs_lola.rds")
 
@@ -472,8 +413,8 @@ plotlog2OR <- function(df, cor_val) {
       "LOLA differential" = "dodgerblue", 
       "Not differential" = "gray50"
     )) +
-    geom_text_repel(data=filter(df, isDiff == "Differential in both"), aes(label = motifs), size = 2, box.padding = 0.5, max.overlaps = Inf) +
-    geom_text_repel(data= filter(df, isDiff %in% c("mTFR differential", "LOLA differential")), aes(label = motifs), size = 2, box.padding = 0.5, max.overlaps = 30) +
+    geom_text_repel(data=filter(df, isDiff == "Differential in both"), aes(label = motifs), size = 3, box.padding = 0.5, max.overlaps = Inf) +
+    geom_text_repel(data= filter(df, isDiff %in% c("mTFR differential", "LOLA differential")), aes(label = motifs), size = 3, box.padding = 0.5, max.overlaps = 30) +
     geom_hline(yintercept = 0, linetype = "dotted", color = "black") +
     geom_vline(xintercept = 0, linetype = "dotted", color = "black") +
     annotate("text", x = 2, y = 2, label = paste0("Correlation: ", round(cor_val, 2)), hjust = 1, vjust = 1, size = 4)

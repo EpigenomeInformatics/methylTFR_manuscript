@@ -16,12 +16,12 @@ suppressPackageStartupMessages({
   library(muLogR)
   library(RnBeads)
 })
-source("/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/src/run_mTFR_RnBeads.R", chdir = TRUE)
 
-motifSetList <- c("encode","jaspar2020", "jaspar2020_distal")[2]
-main.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/memoryTcells/"
-sample_dir <- paste0(main.dir, "reports/")
-out.dir <- paste0(main.dir, "mTFR_devs_071125/")
+# Set paths
+main.dir <- "/scratch/icbb/regina/data/memTcells/"
+sample_dir <- paste0(main.dir, "RnBeads")
+out.dir <- paste0(main.dir, "mTFR_devs/")
+
 if (!dir.exists(out.dir)) {
   dir.create(out.dir)
 }

@@ -19,33 +19,30 @@ suppressPackageStartupMessages({
   library(RnBeads)
 })
 
-source("/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/src/run_mTFR_RnBeads.R", chdir = TRUE)
-
 # Set the paths
-main.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/memoryTcells/"
+main.dir <- "/scratch/icbb/regina/data/memoryTcells/"
 sample_dir <- paste0(main.dir, "reports/")
-debug <- paste0(main.dir, "debug/")
-if(!dir.exists(debug)){dir.create(debug)}
-plot_dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/figures/memtcells/"
-plot_dir <- paste0(plot_dir, "mFoot/")
-if(!dir.exists(plot_dir)){dir.create(plot_dir)}
+plot_dir <- "/scratch/icbb/regina/methylTFR_manuscript/figures/memTcells/mFoot/"
 
 # Load RnBeads preprocessed data
 rnb_set <- RnBeads::load.rnb.set(paste0(sample_dir, "data_import_data/rnb.set_preprocessed"))
 
 if(!file.exists(paste0(debug,"memoryTcells_msites.RDS"))){
     # Import Rnbeads object
-rnb_set <- RnBeads::load.rnb.set(paste0(sample_dir, "data_import_data/rnb.set_preprocessed"))
+  rnb_set <- RnBeads::load.rnb.set(paste0(sample_dir, "data_import_data/rnb.set_preprocessed"))
 
-# Merging cell type replicates
-rnbset_merged <- mergeSamples(rnb_set, "cellType")
+  # Merging cell type replicates
+  rnbset_merged <- mergeSamples(rnb_set, "cellType")
 
-# Get the methylation sites as GRangesList
-msites <- rnb.RnBSet.to.GRangesList(rnbset_merged)
-saveRDS(msites, file =paste0(debug,"memoryTcells_msites.RDS"))
+  # Get the methylation sites as GRangesList
+  msites <- rnb.RnBSet.to.GRangesList(rnbset_merged)
+  saveRDS(msites, file =paste0(debug,"memoryTcells_msites.RDS"))
 }else{
-msites <- readRDS(paste0(debug,"memoryTcells_msites.RDS"))
+  msites <- readRDS(paste0(debug,"memoryTcells_msites.RDS"))
 }
+
+# Remove TEMRA sample
+msites <- msites[c("TCM", "TEM", "TN")]
 
 # Load annotation files
 motifSet <- "JASPAR2020"
@@ -121,10 +118,9 @@ plot_and_save_difference <- function(samples, save_dir, obs_colors) {
 
 # Define the observed colors for CD4T samples
 obs_colors <- c(
-  "Observed divided Expected TN" = "#C8E0B4",
-  "Observed divided Expected TCM" = "#4492C6",
-  "Observed divided Expected TEM" = "#43B6C4",
-  "Observed divided Expected TEMRA" = "#898FB5"
+  "Observed divided Expected TN" = "#BFE8AD",
+  "Observed divided Expected TCM" = "#34B46D",
+  "Observed divided Expected TEM" = "#27501E",
 )
 
 

@@ -12,7 +12,7 @@ suppressPackageStartupMessages({
   library(grid)
   library(LOLA)
 })
-set.seed(12)
+set.seed(13)
 
 # Directory where your data is located
 data.dir <- "/icbb/projects/share/datasets/"
@@ -21,14 +21,12 @@ sample.annotation <- file.path(bed.dir, "samples.tsv")
 num.cores <- 30
 
 # Directory where the output should be written to
-analysis.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/"
-analysis.dir <- file.path(analysis.dir, "memoryTcells")
+analysis.dir <- "/scratch/icbb/regina/data/memoryTcells/RnBeads"
 if (!dir.exists(analysis.dir)) dir.create(analysis.dir)
 
 # Directory where the report files should be written to
 report.dir <- file.path(analysis.dir, "reports")
 rnb.initialize.reports(report.dir)
-
 
 # Create tiling regions for 1kb
 tiling1kb <- muRtools::getTilingRegions("hg38", width = 1000L, onlyMainChrs = TRUE) %>%
@@ -45,9 +43,8 @@ distal <- as.data.frame(distal) %>%
 colnames(distal) <- c("Chromosome", "Start", "End")
 rnb.set.annotation(type = "distal", regions = distal, assembly = "hg38")
 
-
 rnb.options(
-  analysis.name = "CD4 T memory cell subtypes  Methylation Data",
+  analysis.name = "CD4 T memory cell subtypes Methylation Data",
   assembly = "hg38",
   import.table.separator = "\t",
   disk.dump.big.matrices = TRUE,
@@ -90,14 +87,3 @@ if (!file.exists(paste0(report.dir, "/differential_methylation_data/differential
   # Load differential methylation results
   diffMeth <- load.rnb.diffmeth(paste0(analysis.dir, "/reports/differential_methylation_data/differential_rnbDiffMeth/"))
 }
-
-# Run LOLA for differential methylation data
-logger.start("Running LOLA")
-#lolaDb_path <- "/icbb/projects/share/annotations/lolaDB/hg38/"
-lolaDb_path <- "/icbb/projects/share/annotations/lolaDB/lolaTFmotifs/hg38/"
-
-# Run LOLA
-res <- performLolaEnrichment.diffMeth(rnb.set, diffMeth, lolaDb_path)
-logger.info("Saving results")
-saveRDS(res, paste0(analysis.dir, "/reports/differential_methylation_data/differential_rnbDiffMeth/TF_motifs_lola.rds"))
-logger.completed()

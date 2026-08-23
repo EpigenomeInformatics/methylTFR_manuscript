@@ -21,30 +21,26 @@ suppressPackageStartupMessages({
 })
 
 # Set the paths
-source("/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/src/run_mTFR_RnBeads.R", chdir = TRUE)
-main.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/memoryTcells/"
+main.dir <- "/scratch/icbb/regina/data/memoryTcells/"
 sample_dir <- paste0(main.dir, "reports/")
-debug <- paste0(main.dir, "debug/")
+plot_dir <- "/scratch/icbb/regina/methylTFR_manuscript/figures/memTcells/EO_meFoot/"
 
-if(!dir.exists(debug)){dir.create(debug)}
-plot_dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/figures/memtcells/"
-plot_dir <- "/icbb/projects/nitschre/methylTFR/figures/memoryTcells/ExpectedVsObserved/"
-plot_dir <- paste0(plot_dir, "EO_mFoot/")
-if(!dir.exists(plot_dir)){dir.create(plot_dir)}
-
-if(!file.exists(paste0(debug,"memoryTcells_msites.RDS"))){
+if(!file.exists(paste0(main,"memoryTcells_msites.RDS"))){
     # Import Rnbeads object
-rnb_set <- RnBeads::load.rnb.set(paste0(sample_dir, "data_import_data/rnb.set_preprocessed"))
+  rnb_set <- RnBeads::load.rnb.set(paste0(sample_dir, "data_import_data/rnb.set_preprocessed"))
 
-# Merging cell type replicates
-rnbset_merged <- mergeSamples(rnb_set, "cellTypeGroup")
+  # Merging cell type replicates
+  rnbset_merged <- mergeSamples(rnb_set, "cellTypeGroup")
 
-# Get the methylation sites as GRangesList
-msites <- rnb.RnBSet.to.GRangesList(rnbset_merged)
-saveRDS(msites, file =paste0(debug,"memoryTcells_msites.RDS"))
+  # Get the methylation sites as GRangesList
+  msites <- rnb.RnBSet.to.GRangesList(rnbset_merged)
+  saveRDS(msites, file =paste0(debug,"memoryTcells_msites.RDS"))
 }else{
   msites <- readRDS(paste0(debug,"memoryTcells_msites.RDS"))
 }
+
+# Remove TEMRA sample
+msites <- msites[c("TCM", "TEM", "TN")]
 
 # Load annotation files
 motifSet <- "JASPAR2020"
@@ -55,8 +51,6 @@ gc_dist <- getGenomeGC("hg38")
 # Define the TFs of interest
 tfs <- c("JUN","RELB", "FOS","FOXP2", "BATF", "IRF4", "SP1", "FOSL2")
 tf_bindsites <- tf_bindsites[names(tf_bindsites) %in% tfs]
-#tf_bindsites <- tf_bindsites[names(tf_bindsites) != "ZNF384"]
-
 
 distal <- readRDS("/icbb/projects/share/annotations/methylTFRAnnotationHg38/inst/extdata/distal_regions.RDS")
 distal <- if(motifSet == "JASPAR2020_distal"){distal}else{NULL}
@@ -110,17 +104,14 @@ plot_and_save_difference<- function(samples, save_dir, obs_colors) {
 
 # Define the observed colors for CD4T samples
 obs_colors <- c(
-  "Expected_TCM" = "#A9CFA4",
-  "Observed_TCM" = "#1B7837",
+  "Expected_TCM" = "#B0E0C5",
+  "Observed_TCM" = "#33B26C",
 
-  "Expected_TEM" = "#B0C4DE",
-  "Observed_TEM" = "#32527B",
+  "Expected_TEM" = "#67A276",
+  "Observed_TEM" = "#225228",
 
-  "Expected_TN" = "#FDD9A0",
-  "Observed_TN" = "#E66100",
-
-  "Expected_TEMRA" = "#F4B6C2",
-  "Observed_TEMRA" = "#AE017E"
+  "Expected_TN" = "#E6EFDD",
+  "Observed_TN" = "#BFE2AC",
 )
 
 
