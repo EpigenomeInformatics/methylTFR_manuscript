@@ -54,3 +54,4 @@ rsconnect/
 .DS_Store
 ._*
 .nfs*
+.fuse_hidden*

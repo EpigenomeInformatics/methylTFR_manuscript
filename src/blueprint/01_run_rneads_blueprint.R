@@ -2,8 +2,9 @@
 
 #####################################################################
 # 01_run_rneads_blueprint.R
-# created on 27-10-25 by Irem Gunduz
-# Run RnBeads vanilla analysis for Blueprint Bcell Methylation Data
+# created on 27-10-25 by Irem B Gunduz
+# Updated by IBG on 23-08-2026
+# Run RnBeads vanilla analysis for Blueprint Methylation Data
 #####################################################################
 
 suppressPackageStartupMessages({
@@ -21,7 +22,7 @@ if (!file.exists(sample.annotation)) {
   sample.annotation <- file.path(bed.dir, "samples.tsv")
   sannot <- data.table::fread(sample.annotation)
   # Filter the cancer cells
-  sannot <- sannot %>% filter(cellTypeGroup != "cancer")
+  sannot <- sannot %>% filter(cellTypeGroup != "cancer" & DISEASE == "None")
   sample.annotation <- file.path(bed.dir, "samples_without_cancer.tsv")
   data.table::fwrite(sannot, sample.annotation, sep = "\t")
 }
@@ -30,7 +31,7 @@ num.cores <- 30
 # Directory where the output should be written to
 analysis.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/"
 if (!dir.exists(analysis.dir)) dir.create(analysis.dir)
-analysis.dir <- file.path(analysis.dir, "RnBeads_291025")
+analysis.dir <- file.path(analysis.dir, "RnBeads_230826")
 if (!dir.exists(analysis.dir)) dir.create(analysis.dir)
 
 # Directory where the report files should be written to
@@ -49,8 +50,14 @@ colnames(tiling1kb) <- c("Chromosome", "Start", "End")
 rnb.set.annotation(type = "tiling1kb", regions = tiling1kb, assembly = "hg38")
 
 # Create distal regions
-# Distal regions
-distal <- readRDS("/icbb/projects/share/annotations/methylTFRAnnotationHg38/inst/extdata/distal_regions.RDS")
+# Ensembl Regulatory Build v104, hg38, filtered to distal. This is the same
+# region set that jaspar2020_distal_motif_gcfreq.rds was built against, so
+# all downstream scripts must read it from here.
+distal.file <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFRAnnotationHg38_old/inst/extdata/distal_regions.RDS"
+if (!file.exists(distal.file)) {
+  stop("Distal regions file does not exist: ", distal.file)
+}
+distal <- readRDS(distal.file)
 distal <- as.data.frame(distal) %>%
   dplyr::select(seqnames, start, end)
 colnames(distal) <- c("Chromosome", "Start", "End")
@@ -80,6 +87,17 @@ rnb.set <- result$rnb.set
 
 # Quality Control
 # rnb.run.qc(rnb.set, report.dir)
+
+rnb.set <- rnb.execute.sex.removal(rnb.set.unfiltered)$dataset
+
+# Remove sites that have an exceptionally high coverage
+rnb.set <- rnb.execute.highCoverage.removal(rnb.set)$dataset
+
+# Remove sites containing NA for beta values
+rnb.set <- rnb.execute.na.removal(rnb.set)$dataset
+
+# Remove sites for which the beta values have low standard deviation
+rnb.set <- rnb.execute.variability.removal(rnb.set, 0.005)$dataset
 
 ## Preprocessing
 rnb.set <- rnb.run.preprocessing(rnb.set, dir.reports = report.dir)$rnb.set

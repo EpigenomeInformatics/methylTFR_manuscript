@@ -2,77 +2,95 @@
 
 #####################################################################
 # 02_run_mTFR_blueprint.R
-# created on 27-10-25 by IBG
-# Run methylTFR analysis on BLUEPRINT data
+# created on 27-10-25 by Irem B Gunduz
+# Updated by IBG on 23-08-2026
+# Run methylTFR analysis on the preprocessed Blueprint RnBeads object
 #####################################################################
 
-set.seed(42)
 suppressPackageStartupMessages({
   library(data.table)
   library(dplyr)
+  library(GenomicRanges)
+  library(logger)
+  library(RnBeads)
   library(methylTFR)
   library(methylTFRAnnotationHg38)
-  library(logger)
-  library(GenomicRanges)
-  library(muLogR)
-  library(stringr)
-  library(RnBeads)
 })
-# 
-source("/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/src/run_mTFR_RnBeads.R", chdir = TRUE)
-#source("/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR/R/run_methyltfr.R")
+set.seed(42)
 
-motifSetList <- c("JASPAR2020_distal", "JASPAR2020")[2]
-main.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/"
-sample_dir <- paste0(main.dir, "RnBeads_291025/")
-out.dir <- paste0(main.dir, "mTFR_devs_121125/")
+# Motif sets to run, names are lower case in the new annotation package
+motifSetList <- c("jaspar2020", "jaspar2020_distal")
+num.cores <- 32
+chunk.size <- 10
 
-if (!dir.exists(out.dir)) {
-  dir.create(out.dir)
+# Directory where the annotation resources are stored locally
+annotation.dir <- "/icbb/projects/share/annotations/methylTFRAnnotationHg38/inst/extdata"
+if (!dir.exists(annotation.dir)) {
+  stop("Annotation directory does not exist: ", annotation.dir)
 }
-if (!file.exists("/icbb/projects/igunduz/annotation/methylTFRAnnotationHg38/inst/extdata/distal_regions.RDS")) {
-  distal <- fread("/icbb/projects/share/annotations/lolaDB/hg38/EnsemblRegBuildBP/regions/regionSet_1.bed", header = FALSE)
-  distal$V6 <- str_replace(distal$V6, ".", "*")
-  distal <- GRanges(
-    seqnames = distal$V1,
-    ranges = IRanges(start = distal$V2, end = distal$V3),
-    strand = distal$V6
-  )
-  saveRDS(distal, "/icbb/projects/igunduz/annotation/methylTFRAnnotationHg38/inst/extdata/distal_regions.RDS")
-} else {
-  distal <- readRDS("/icbb/projects/igunduz/annotation/methylTFRAnnotationHg38/inst/extdata/distal_regions.RDS")
+options(methylTFRAnnotationHg38.datadir = annotation.dir)
+
+# Directory where the RnBeads output was written to by 01
+analysis.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/"
+rnb.dir <- file.path(analysis.dir, "RnBeads_230826")
+rnb.set.path <- file.path(rnb.dir, "reports", "data_import_data", "rnb.set_preprocessed")
+
+# Directory where the deviations should be written to
+out.dir <- file.path(analysis.dir, "mTFR_devs_230826")
+if (!dir.exists(out.dir)) dir.create(out.dir, recursive = TRUE)
+
+# Distal regions used to restrict the jaspar2020_distal run.
+# Ensembl Regulatory Build v104, hg38, filtered to distal. This is the same
+# region set that jaspar2020_distal_motif_gcfreq.rds was built against, so it
+# must not be regenerated from the LOLA bed files: a different region set would
+# make the observed footprints and the GC background disagree.
+distal.file <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFRAnnotationHg38_old/inst/extdata/distal_regions.RDS"
+if (!file.exists(distal.file)) {
+  stop("Distal regions file does not exist: ", distal.file)
 }
-logger.info("Loading RnBeads object...")
-rnb_set <- RnBeads::load.rnb.set(paste0(sample_dir, "reports/data_import_data/rnb.set_preprocessed"))
+distal <- readRDS(distal.file)
+log_info("Loaded ", length(distal), " distal regions from ", distal.file)
+
+# Load the preprocessed RnBeads object
+log_info("Loading RnBeads object from ", rnb.set.path)
+rnb.set <- RnBeads::load.rnb.set(rnb.set.path)
+
+# Genome wide GC distribution is shared across the motif sets
+gc_dist <- getGenomeGC("hg38")
 
 for (motifSet in motifSetList) {
-  logger.info(paste0("Running methylTFR for ", motifSet))
-  logger.info("Loading the TF binding sites, GC freqs and GC dist")
-  distal <- if (motifSet != "JASPAR2020_distal") {
-    NULL
-  } else {
-    distal
+  out.file <- file.path(out.dir, paste0(motifSet, "_deviations.RDS"))
+  if (file.exists(out.file)) {
+    log_info("Skipping ", motifSet, ", deviations already exist")
+    next
   }
-  tfset <- if (motifSet == "JASPAR2020_distal") {
-    "JASPAR2020"
-  } else {
-    motifSet
-  }
-  gcfreqs <- getGCfreq(motifSet)
-  gc_dist <- getGenomeGC("hg38")
+
+  log_info("Running methylTFR for ", motifSet)
+  log_info("Loading the TF binding sites and GC freqs")
+
+  # The distal run reuses the JASPAR2020 binding sites, restricted to distal regions
+  enhancer <- if (motifSet == "jaspar2020_distal") distal else NULL
+  tfset <- if (motifSet == "jaspar2020_distal") "jaspar2020" else motifSet
+
+  gcfreqs <- getGCfreq(motifSet = motifSet)
   tf_bindsites <- getTFbindsites(motifSet = tfset)
 
-  logger::log_info("Number of motifs in gcfreqs: ", length(gcfreqs))
-  logger::log_info("Out dir: ", out.dir)
+  log_info("Number of motifs in gcfreqs: ", length(gcfreqs))
+  log_info("Out file: ", out.file)
+
+  # methylTFR reads the calls at single cytosine resolution from the RnBSet
   deviations <- run_methylTFR_RnBeads(
-    rnb_set = rnb_set,
-    threads = 32,
-    chunkSize = 10,
+    rnb_set = rnb.set,
     tf_bindsites = tf_bindsites,
     gcfreqs = gcfreqs,
     gc_dist = gc_dist,
-    enhancer = distal,
-    ignoreStrand = TRUE
+    chunkSize = chunk.size,
+    threads = num.cores,
+    enhancer = enhancer,
+    ignoreStrand = TRUE,
+    cov_threshold = 1
   )
-  saveRDS(deviations, paste0(out.dir, motifSet, "_deviations.RDS"))
+
+  saveRDS(deviations, out.file)
+  log_success("Finished ", motifSet)
 }
