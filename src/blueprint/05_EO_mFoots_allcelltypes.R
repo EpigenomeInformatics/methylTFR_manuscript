@@ -243,7 +243,7 @@ log_info("Plotting groups: ", paste(groups, collapse = ", "))
 
 tf_bindsites <- getTFbindsites(motifSet = tfSet)
 gcfreqs <- getGCfreq(motifSet = motifSet)
-gc_dist <- getGenomeGC("hg38")
+gc_dist <- getGenomeGC()
 
 missing_tfs <- setdiff(tfs, names(tf_bindsites))
 if (length(missing_tfs) > 0) {
