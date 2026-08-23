@@ -31,10 +31,8 @@ cell_type_colors <- c(
 )
 
 # Paths
-plot_dir <- "/icbb/projects/nitschre/methylTFR/figures/figure5"
+plot_dir <- "/scratch/icbb/regina/methylTFR/figures/ECHO"
 r_objects_dir <- "/icbb/projects/nitschre/methylTFR/r_objects/"
-dir.create(plot_dir, recursive = TRUE, showWarnings = FALSE)
-dir.create(r_objects_dir, recursive = TRUE, showWarnings = FALSE)
 
 # Load pseudobulk TF activity matrices
 chromVar <- readRDS(gzfile("/icbb/projects/nitschre/methylTFR/scripts/other/cvar_zscores_adj_psuedobulk.R"))
@@ -61,13 +59,15 @@ samples_metadata(MOFAobject) <- metadata
 
 # Prepare and train MOFA (save HDF5)
 MOFAobject <- prepare_mofa(MOFAobject)
-outfile <- file.path(r_objects_dir, "MOFAobject_trained_Echo.rds")
+outfile <- file.path(r_objects_dir, "mtfr_chromVar_model.rds")
 
 # If model file exists, load trained object; otherwise run training
 if (file.exists(outfile)) {
   MOFAobject.trained <- load_model(outfile)
 } else {
   MOFAobject.trained <- run_mofa(MOFAobject, outfile, use_basilisk = TRUE)
+  saveRDS(MOFAobject.trained, file.path(r_objects_dir, "mtfr_chromVar_model.rds"))
+
 }
 
 # Extract factors and compute ANOVA R2 for celltype
@@ -88,8 +88,9 @@ for (fa in unique(factors_long$factor)) {
 r2_df <- r2_df %>% arrange(desc(R2))
 write.csv(r2_df, file.path(plot_dir, "r2Values.csv"), row.names = FALSE)
 
-# Keep only top factors (from R2 ranking)
-top_factors <- head(r2_df$Factor, 5)#
+# Choose top factors (by R2) for plotting
+top_n <- 7
+top_factors <- head(r2_df$Factor, top_n)
 
 # Get weights and prepare modality contribution plots
 weights_df <- get_weights(MOFAobject.trained, as.data.frame = TRUE)
@@ -113,7 +114,7 @@ p_modality_frac <- ggplot(agg, aes(x = factor, y = frac, fill = view)) +
     position = position_stack(vjust = 0.5), size = 3
   ) +
   scale_y_continuous(labels = percent_format(accuracy = 1)) +
-  scale_fill_manual(values = c("#ED4B4A", "#6BC75A")) +
+  scale_fill_manual(values = c("#ED4B4A", "#4793e4")) +
   labs(
     x = "Factor", y = "Relative contribution (|weights| fraction)", fill = "View",
     title = "Modality contribution per factor (weights-based)"
@@ -125,25 +126,7 @@ ggsave(
   width = 8, height = 4
 )
 
-# Also plot absolute sums (dodged), with optional log-scale if large dynamic range
-p_modality_abs <- ggplot(agg, aes(x = factor, y = sum_abs, fill = view)) +
-  geom_bar(stat = "identity", position = position_dodge(width = 0.8)) +
-  geom_text(aes(label = round(sum_abs, 1)), position = position_dodge(width = 0.8), vjust = -0.5, size = 3) +
-  scale_y_continuous(trans = "log10", labels = scales::comma_format()) +
-  scale_fill_manual(values = c("#ED4B4A", "#6BC75A")) +
-  labs(
-    x = "Factor", y = "Sum of |weights| (log10 scale)", fill = "View",
-    title = "Absolute modality contribution per factor (sum |weights|)"
-  ) +
-  theme_classic(base_size = 12)
-
-ggsave(
-  filename = file.path(plot_dir, "modality_contribution_abs_topFactors_log.pdf"), plot = p_modality_abs,
-  width = 9, height = 4
-)
-
 # Filter to top factors (optional)
-top_factors <- c("Factor1", "Factor2", "Factor3", "Factor4", "Factor7")
 factors_long <- factors_long %>% filter(factor %in% top_factors)
 
 # Plot: strip / dot plot per factor
@@ -165,7 +148,7 @@ ggsave(
 )
 
 # Barplot R2 values
-p <- ggplot(r2_df,aes(x=reorder(Factor, -R2), y=R2))+
+p <- ggplot(r2_df,aes(x=reorder(Factor, -R2), y=R2, color="#981405"))+
         geom_bar(stat="identity")+
         theme_classic()+
         ylim(0,1)+
@@ -206,7 +189,9 @@ for(f in r2_df$Factor[1:5]){
 write.csv(topTfs, file.path(plot_dir, "topTFs.csv"), row.names=FALSE)
 
 
-#### Heatmap of TFs from integration
+#####################################################################
+# Heatmaps
+#####################################################################
 # Filter for unique TFs
 mofaTFs <- unique(topTfs$feature)
 
@@ -222,7 +207,7 @@ groups <- sapply(strsplit(colnames(mtfr_filtered), "_"), `[`, 1)
 colnames(mtfr_filtered) <- groups
 colnames(chromVar_filtered) <- groups
 
-# Plot
+# MTFR heatmap
 path <- file.path(plot_dir, "heatmap_MofaTFs_mtfr.pdf")
 
 # Annotation
@@ -231,11 +216,14 @@ ha <- HeatmapAnnotation(
   col = list(celltypes = cell_type_colors
 ))
 
-# Column groups
-column_split_factor <- factor(groups, levels = unique(groups))
+# Column order 
+column_order <- c("Monocyte", "B-cell", "NK-cell", "Th-Naive", "Tc-Naive", "Th-Mem", "Tc-Mem")
 
-# MTFR
-p<-Heatmap(
+# Column groups
+column_split_factor <- factor(groups, levels = column_order)
+
+# Heatmap
+hm_mtfr <- Heatmap(
   mtfr_filtered,
   row_names_gp = gpar(fontsize = 4),
   top_annotation = ha,
@@ -246,20 +234,14 @@ p<-Heatmap(
   cluster_column_slices = FALSE, # Prevent clustering of the groups themselves)
 )
 pdf(path)
-draw(p)
+draw(hm_mtfr)
 dev.off()
 
-# Chromvar
-# Annotation
-ha <- HeatmapAnnotation(
-  celltypes=colnames(chromVar_filtered),
-  col = list(celltypes = cell_type_colors)
-)
-
+## ChromVar
 path <- file.path(plot_dir, "heatmap_MofaTFs_chromVar.pdf")
 
 # Get row order
-p <- draw(p)
+p <- draw(hm_mtfr)
 row_order_indices <- row_order(p)    
 
 # Set color scheme
@@ -271,8 +253,6 @@ col_fun <- colorRamp2(
   seq(-5, 5, length.out = length(c)),
   c
 )
-# Column groups
-column_split_factor <- factor(groups, levels = unique(groups))
 
 pdf(path)
 Heatmap(
@@ -365,7 +345,7 @@ p_data_scatter <- ggplot(data_scatter, aes(x = chromVar, y = mtfr, color = cellt
   labs(caption = paste0("Cor. Coef.:",round(cor, 1))) +
   theme(plot.caption = element_text(hjust = 0.5, size = 10))+
   labs(title = paste0("TF Activity Correlation (chromVar vs mtfr) for ", motif))
-ggsave(filename = file.path(paste0(plot_dir,motif,"_chromVar_vs_mtfr_scatter.pdf")),
+ggsave(filename = file.path(paste0(plot_dir,"scatterplots/", motif,"_chromVar_vs_mtfr_scatter.pdf")),
  plot = p_data_scatter, width = 6, height = 5)
 }
 

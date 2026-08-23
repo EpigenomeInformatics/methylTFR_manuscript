@@ -23,7 +23,7 @@ cell_type_colors <- c(
   "Tc-Naive" = "#888FB5",
   "Th-Naive" = "#C7E9B4"
 )
-set.seed(12) # set seed
+set.seed(12) 
 outputDir <- "/icbb/projects/igunduz/archr_projects/icbb/projects/igunduz/archr_project_011023"
 project <- ArchR::loadArchRProject(outputDir, showLogo = FALSE)
 addArchRThreads(threads = 30) # set the cores
