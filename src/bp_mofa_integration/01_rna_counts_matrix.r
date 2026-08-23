@@ -4,16 +4,15 @@
 # 01_rna_counts_matrix.R
 # created on 07.04.2026 
 # Creating raw RNA counts matrix for blueprint samples with matching WGBS data
-#####################################################################library(dplyr)
-supressPackageStartupMessages({
+#####################################################################
+suppressPackageStartupMessages({
   library(stringr)
   library(SummarizedExperiment)
   library(tibble)
+  library(dplyr)
 })
 
 set.seed(12)
-
-plot_dir <- "/icbb/projects/nitschre/methylTFR/figures/blueprint/Heatmaps_differentials/"
 
 # Read in annotation file
 annot <- read.csv("methylTFR/sample_annotation/annotated_wgbs_with_rna_chip_matches.csv", stringsAsFactors=FALSE)
@@ -62,14 +61,5 @@ rna <- rna %>%
 # Gene ids as rownames
 rownames(rna) <- rna$gene_name
 rna$gene_name <- NULL
-
-## Change sample names
-annotation_with_ids <- read.csv("methylTFR/sample_annotation/full_annotation.csv", stringsAsFactors=FALSE)
-
-#Indices of ids in table
-indices <- match(colData(rna_se)$epirrId, annotation_with_ids$epirr_id_without_version)
-
-# Extract corresponding names
-colnames(rna) <- annotation_with_ids$cellTypeGroup[indices]
 
 saveRDS(rna, "/icbb/projects/nitschre/methylTFR/r_objects/bp_rawRNAcounts.RDS")
