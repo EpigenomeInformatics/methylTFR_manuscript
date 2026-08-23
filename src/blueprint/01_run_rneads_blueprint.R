@@ -4,103 +4,106 @@
 # 01_run_rneads_blueprint.R
 # created on 27-10-25 by Irem B Gunduz
 # Updated by IBG on 23-08-2026
-# Run RnBeads vanilla analysis for Blueprint Methylation Data
+# Filter the existing Blueprint RnBeads run down to the healthy samples
+#
+# The full RnBeads import and preprocessing takes too long to repeat, so
+# this reuses the preprocessed object of the 291025 run, removes the
+# disease samples and writes the result under a new date. The source run
+# is never modified. The vanilla import that produced it is in git
+# history, before this revision.
 #####################################################################
 
 suppressPackageStartupMessages({
   library(dplyr)
+  library(logger)
   library(RnBeads)
-  library(grid)
 })
 set.seed(12)
 
-# Directory where your data is located
-data.dir <- "/icbb/projects/share/datasets/"
-bed.dir <- file.path(data.dir, "blueprint")
-sample.annotation <- file.path(bed.dir, "samples_without_cancer.tsv")
-if (!file.exists(sample.annotation)) {
-  sample.annotation <- file.path(bed.dir, "samples.tsv")
-  sannot <- data.table::fread(sample.annotation)
-  # Filter the cancer cells
-  sannot <- sannot %>% filter(cellTypeGroup != "cancer" & DISEASE == "None")
-  sample.annotation <- file.path(bed.dir, "samples_without_cancer.tsv")
-  data.table::fwrite(sannot, sample.annotation, sep = "\t")
-}
-num.cores <- 30
-
-# Directory where the output should be written to
+# Directories, the source run is read only from here on
 analysis.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/"
-if (!dir.exists(analysis.dir)) dir.create(analysis.dir)
-analysis.dir <- file.path(analysis.dir, "RnBeads_230826")
-if (!dir.exists(analysis.dir)) dir.create(analysis.dir)
+source.tag <- "RnBeads_291025"
+target.tag <- "RnBeads_230826"
 
-# Directory where the report files should be written to
-report.dir <- file.path(analysis.dir, "reports")
-rnb.initialize.reports(report.dir)
+source.dir <- file.path(analysis.dir, source.tag, "reports", "data_import_data")
+source.set <- file.path(source.dir, "rnb.set_preprocessed")
+
+target.dir <- file.path(analysis.dir, target.tag, "reports", "data_import_data")
+target.set <- file.path(target.dir, "rnb.set_preprocessed")
+target.annot <- file.path(target.dir, "annotation.csv")
+
+# Number of samples the filtered set must contain, set to NULL to skip
+expected.samples <- 147
+
+num.cores <- 32
+
+if (!file.exists(source.set)) {
+  stop("Source RnBeads object does not exist: ", source.set)
+}
+if (file.exists(target.set)) {
+  stop(
+    "Target RnBeads object already exists: ", target.set,
+    "\nRemove it or change target.tag, this script never overwrites."
+  )
+}
+if (!dir.exists(target.dir)) dir.create(target.dir, recursive = TRUE)
 
 # Multiprocess
 parallel.setup(num.cores)
 
-# Create tiling regions for 1kb
-tiling1kb <- muRtools::getTilingRegions("hg38", width = 1000L, onlyMainChrs = TRUE) %>%
-  data.table::as.data.table() %>%
-  dplyr::select(seqnames, start, end) %>%
-  as.data.frame()
-colnames(tiling1kb) <- c("Chromosome", "Start", "End")
-rnb.set.annotation(type = "tiling1kb", regions = tiling1kb, assembly = "hg38")
+#####################################################################
+# Load the existing preprocessed object
+#####################################################################
 
-# Create distal regions
-# Ensembl Regulatory Build v104, hg38, filtered to distal. This is the same
-# region set that jaspar2020_distal_motif_gcfreq.rds was built against, so
-# all downstream scripts must read it from here.
-distal.file <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFRAnnotationHg38_old/inst/extdata/distal_regions.RDS"
-if (!file.exists(distal.file)) {
-  stop("Distal regions file does not exist: ", distal.file)
+log_info("Loading RnBeads object from ", source.set)
+rnb.set <- load.rnb.set(source.set)
+sannot <- pheno(rnb.set)
+log_info(source.tag, ": ", nrow(sannot), " samples")
+
+#####################################################################
+# Remove the disease samples
+#####################################################################
+
+# The Blueprint cancer samples are flagged through the DISEASE column
+# (7 Acute Lymphocytic Leukemia Bcell_pre and 3 Multiple Myeloma plasma).
+# They are annotated as cellTypeGroup "Bcell" and "plasma", not "cancer",
+# so filtering on cellTypeGroup alone would keep every one of them.
+disease <- as.character(sannot$DISEASE)
+drop_idx <- which(is.na(disease) | disease != "None")
+
+# Kept as a safeguard, no sample currently carries this label
+if ("cellTypeGroup" %in% colnames(sannot)) {
+  drop_idx <- unique(c(
+    drop_idx,
+    which(as.character(sannot$cellTypeGroup) == "cancer")
+  ))
 }
-distal <- readRDS(distal.file)
-distal <- as.data.frame(distal) %>%
-  dplyr::select(seqnames, start, end)
-colnames(distal) <- c("Chromosome", "Start", "End")
-rnb.set.annotation(type = "distal", regions = distal, assembly = "hg38")
 
-# Set up the analysis
-rnb.options(
-  analysis.name = "Blueprint",
-  assembly = "hg38",
-  import.table.separator = "\t",
-  region.aggregation = "sum",
-  region.types = c("tiling1kb", "distal"),
-  import.default.data.type = "data.dir",
-  import.bed.style = "EPP",
-  disk.dump.big.matrices = TRUE,
-  strand.specific = FALSE,
-  filtering.sex.chromosomes.removal = TRUE,
-  differential.enrichment.lola = FALSE,
-  identifiers.column = "bedFile",
-  differential.comparison.columns = "cellTypeGroup" # not exclusive cell-types
-)
+if (length(drop_idx) > 0) {
+  log_info("Removing ", length(drop_idx), " samples: ",
+    paste(unique(disease[drop_idx]), collapse = ", "))
+  rnb.set <- remove.samples(rnb.set, drop_idx)
+}
 
-# Data Import
-data.source <- c(bed.dir, sample.annotation, 1)
-result <- rnb.run.import(data.source = data.source, data.type = "bs.bed.dir", dir.reports = report.dir)
-rnb.set <- result$rnb.set
+sannot <- pheno(rnb.set)
+log_info(target.tag, ": ", nrow(sannot), " samples remaining")
 
-# Quality Control
-# rnb.run.qc(rnb.set, report.dir)
+if (!is.null(expected.samples) && nrow(sannot) != expected.samples) {
+  stop(
+    "Expected ", expected.samples, " samples after filtering but got ",
+    nrow(sannot), ". Check the DISEASE column of the source run before ",
+    "running anything downstream."
+  )
+}
 
-rnb.set <- rnb.execute.sex.removal(rnb.set.unfiltered)$dataset
+#####################################################################
+# Save the filtered object and its annotation
+#####################################################################
 
-# Remove sites that have an exceptionally high coverage
-rnb.set <- rnb.execute.highCoverage.removal(rnb.set)$dataset
+# The annotation is written from the object itself, so it can never
+# disagree with the samples that 02 to 06 read.
+write.csv(sannot, target.annot, row.names = FALSE)
+log_info("Wrote ", target.annot)
 
-# Remove sites containing NA for beta values
-rnb.set <- rnb.execute.na.removal(rnb.set)$dataset
-
-# Remove sites for which the beta values have low standard deviation
-rnb.set <- rnb.execute.variability.removal(rnb.set, 0.005)$dataset
-
-## Preprocessing
-rnb.set <- rnb.run.preprocessing(rnb.set, dir.reports = report.dir)$rnb.set
-
-## save the object
-save.rnb.set(rnb.set, paste0(report.dir, "/data_import_data/rnb.set_preprocessed"), archive = FALSE)
+save.rnb.set(rnb.set, target.set, archive = FALSE)
+log_success("Wrote ", target.set)
