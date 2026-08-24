@@ -44,13 +44,6 @@ tfSet <- "jaspar2020" # binding sites are shared with the genome wide set
 # Distance from the outer edge used to normalise the flanking baseline
 flank.norm <- 30
 
-# Directory where the annotation resources are stored locally
-annotation.dir <- "/icbb/projects/share/annotations/methylTFRAnnotationHg38/inst/extdata"
-if (!dir.exists(annotation.dir)) {
-  stop("Annotation directory does not exist: ", annotation.dir)
-}
-options(methylTFRAnnotationHg38.datadir = annotation.dir)
-
 # Distal regulatory regions, kept outside the annotation package
 distal.file <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFRAnnotationHg38_old/inst/extdata/distal_regions.RDS"
 

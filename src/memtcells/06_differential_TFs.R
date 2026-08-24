@@ -4,10 +4,12 @@
 # 06_differential_TFs.R
 # created on 27-10-2025 by Irem B Gunduz
 # Updated by IBG on 23-08-2026
-# Differential TFs from the methylTFR deviations of the CD4 memory
-# T cell subtypes, the matching TF gene expression heatmap, the mean
-# difference comparison of the two contrasts, and the comparison
-# against the LOLA motif enrichment of 01
+# Differential TFs of the CD4 memory T cell subtypes:
+#   - paired heatmap of the methylTFR Z-scores and the matching TF
+#     gene expression, annotated with the row-wise correlation
+#   - mean difference of the two contrasts
+#   - LOLA volcano plots and LOLA against methylTFR
+#   - density scatter and MA plot of the RnBeads differential methylation
 #####################################################################
 
 suppressPackageStartupMessages({
@@ -16,14 +18,19 @@ suppressPackageStartupMessages({
   library(ggrepel)
   library(grid)
   library(circlize)
-  library(viridis)
   library(ComplexHeatmap)
   library(org.Hs.eg.db)
   library(logger)
+  library(muRtools)
+  library(RnBeads)
   library(SummarizedExperiment)
   library(methylTFR)
 })
 set.seed(13)
+
+src.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/src"
+source(file.path(src.dir, "utils.R"))
+source(file.path(src.dir, "lola_utils.R"))
 
 #####################################################################
 # Settings
@@ -45,27 +52,83 @@ top.n <- 50
 cut.padj <- 0.05
 cut.mean.diff <- 0.1
 
-cell_type_colors <- c(
-  "TN" = "#C8E0B4",
-  "TCM" = "#4492C6",
-  "TEM" = "#43B6C4",
-  "TEMRA" = "#898FB5"
+# TFs shown side by side on the paired heatmap. Set to NULL to fall back to
+# the union of the top.n motifs of each contrast. Every name here must exist
+# both as a motif and as a gene symbol, the ones that do not are reported.
+heatmap.tfs <- c(
+  "XBP1", "ZNF449", "IRF9", "RFX3", "NFE2L1", "RBPJ", "HEY1", "RORB",
+  "MEF2C", "TFEC", "BATF3", "NFE2", "HEY2", "HES7", "ZFP57", "EBF1",
+  "MNT", "FOSL2", "BHLHE40", "BATF", "FOS", "JUN", "RORA", "KLF6",
+  "BCL6", "FOSL1", "JUND", "JUNB", "IRF7", "MYC", "GLIS3", "IRF4"
 )
 
-# Which element of the LOLA result holds each contrast. These are
-# positional indices into res_lola$region, they are checked below.
-lola.index <- c(EM = 3, CM = 2)
-lola.region <- "tiling"
+# Significance cuts of the LOLA against methylTFR panel, one per assay
+cut.padj.mtfr <- 0.05 # methylTFR adjusted p-value
+cut.qval.lola <- 0.05 # LOLA q-value
+
+# Motifs labelled per direction on the standalone LOLA volcano
+top.label.lola <- 10
+
+# Motifs labelled per category on that panel. Everything differential in
+# both assays is labelled by default; lower it to Inf-free numbers if the
+# top band is still too crowded to read.
+label.n <- c(
+  "Differential in both" = Inf,
+  "mTFR differential" = 10,
+  "LOLA differential" = 10,
+  "Not differential" = 0
+)
+
+# Differential status colours of that panel
+status_colors <- c(
+  "Differential in both" = "#E4674E",
+  "mTFR differential" = "#2D7A4F",
+  "LOLA differential" = "#6BAED6",
+  "Not differential" = "#BDBDBD"
+)
+
+# Shared green scheme, also defined in utils.R as CELL_TYPE_COLORS
+cell_type_colors <- CELL_TYPE_COLORS
+
+# Diverging ramps of the paired heatmap, capped at +/- 2
+zscore.limit <- 2
+mtfr_colors <- colorRamp2(
+  c(-2, -1, 0, 1, 2),
+  c("#2A2F9E", "#7570B3", "#FFFFFF", "#F16C43", "#E03426")
+)
+gex_colors <- colorRamp2(
+  c(-2, -1, 0, 1, 2),
+  c("#40004B", "#9970AB", "#FFFFFF", "#5AAE61", "#00441B")
+)
+cor_colors <- colorRamp2(
+  c(-1, -0.5, 0, 0.5, 1),
+  c("#8E0152", "#DE77AE", "#FFFFFF", "#7FBC41", "#276419")
+)
+
+# The comparison inside the LOLA result is resolved by name, not by
+# position: res_lola$region is named after the RnBeads comparisons, e.g.
+# "TEM vs. TN (based on cellType)". Set an entry here to override the
+# lookup with an exact name or an index.
+lola.comparison <- c(EM = NA, CM = NA)
+
+# Region type inside each comparison. 01 registers tiling1kb and distal, so
+# the "tiling" of the older runs no longer exists. The first name in this
+# vector that is actually present wins.
+lola.region <- c("tiling1kb", "distal", "tiling", "sites")
 lola.userSets <- c("rankCut_1000_hyper", "rankCut_1000_hypo")
+
+# Region types used for the RnBeads density scatter and MA plots
+diffmeth.regions <- c("tiling1kb", "distal", "sites")
 
 # Directories
 analysis.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/memoryTcells"
 dev.tag <- "mTFR_devs_230826"
 dev.file <- file.path(analysis.dir, dev.tag, paste0(motifSet, "_deviations.RDS"))
-lola.file <- file.path(
+diffmeth.dir <- file.path(
   analysis.dir, "reports", "differential_methylation_data",
-  "differential_rnbDiffMeth", "TF_motifs_lola.rds"
+  "differential_rnbDiffMeth"
 )
+lola.file <- file.path(diffmeth.dir, "TF_motifs_lola.rds")
 
 rna.dir <- "/icbb/projects/share/datasets/memoryTcells/rna_raw_081025"
 meth.dir <- "/icbb/projects/share/datasets/memoryTcells"
@@ -109,6 +172,71 @@ clean_gex_names <- function(x) {
   x <- sub("_BlTN$", "_TN", x)
   x <- sub("_BlTR$", "_TEMRA", x)
   x
+}
+
+# Find the LOLA comparison for a contrast by name. RnBeads names them
+# "<group1> vs. <group2> (based on <column>)", so the pair of cell types and
+# the cellType column identify it without relying on the element order. The
+# group order also tells us which side "hyper" refers to.
+resolve_lola_comparison <- function(res_lola, test, ref, override = NA) {
+  nms <- names(res_lola$region)
+  if (is.null(nms)) stop("res_lola$region has no names")
+
+  idx <- NA
+  if (!is.na(override)) {
+    idx <- if (is.character(override)) match(override, nms) else as.integer(override)
+    if (is.na(idx) || idx < 1 || idx > length(nms)) {
+      stop("Override '", override, "' does not match res_lola$region")
+    }
+  } else {
+    hit <- grepl(paste0("\\b", test, "\\b"), nms) &
+      grepl(paste0("\\b", ref, "\\b"), nms) &
+      grepl("cellType", nms)
+    if (sum(hit) == 0) {
+      stop(
+        "No comparison matches ", test, " and ", ref, ". Available: ",
+        paste(nms, collapse = " | ")
+      )
+    }
+    if (sum(hit) > 1) {
+      stop(
+        "Several comparisons match ", test, " and ", ref, ": ",
+        paste(nms[hit], collapse = " | "), ". Set lola.comparison."
+      )
+    }
+    idx <- which(hit)
+  }
+
+  # "TEM vs. TN (based on cellType)" -> group1 TEM, group2 TN
+  parts <- strsplit(sub(" \\(based on.*", "", nms[idx]), "\\s*vs\\.\\s*")[[1]]
+  list(
+    index = idx, name = nms[idx],
+    grp1 = trimws(parts[1]), grp2 = trimws(parts[2])
+  )
+}
+
+# First of the preferred region names that this comparison actually carries
+resolve_lola_region <- function(res_lola, index, preferred) {
+  available <- names(res_lola$region[[index]])
+  hit <- intersect(preferred, available)
+  if (length(hit) == 0) {
+    stop(
+      "None of ", paste(preferred, collapse = ", "), " found. Available: ",
+      paste(available, collapse = ", ")
+    )
+  }
+  hit[1]
+}
+
+# Cell type annotation used on top of both halves of the paired heatmap
+cell_type_annotation <- function(cell_types) {
+  present <- intersect(names(cell_type_colors), unique(cell_types))
+  HeatmapAnnotation(
+    celltypes = cell_types,
+    col = list(celltypes = cell_type_colors[present]),
+    annotation_name_gp = gpar(fontsize = 8),
+    show_legend = FALSE
+  )
 }
 
 #####################################################################
@@ -175,7 +303,7 @@ for (nm in names(comparisons)) {
     row.names = FALSE
   )
 
-  # Mean Z-score difference, reference minus test, as in the original
+  # Mean Z-score difference, reference minus test
   z <- zscores_all[, idx, drop = FALSE]
   zdiff <- rowMeans(z[, groups == ref, drop = FALSE]) -
     rowMeans(z[, groups == test, drop = FALSE])
@@ -186,7 +314,7 @@ for (nm in names(comparisons)) {
   results[[nm]] <- diff
 }
 
-# Top motifs of either contrast drive both heatmaps
+# Top motifs of either contrast drive the paired heatmap
 top_tfs <- unique(unlist(lapply(results, function(d) head(d$motifs, top.n))))
 log_info(length(top_tfs), " motifs in the union of the top ", top.n, " of each contrast")
 
@@ -194,7 +322,7 @@ zscores_top <- zscores_all[rownames(zscores_all) %in% top_tfs, , drop = FALSE]
 saveRDS(zscores_top, file.path(table.dir, paste0("zscores_diffmotifs_", motifSet, ".RDS")))
 
 #####################################################################
-# TF gene expression heatmap
+# TF gene expression matrix
 #####################################################################
 
 rna_files <- list.files(rna.dir,
@@ -236,7 +364,6 @@ colnames(expr) <- clean_gex_names(colnames(expr))
 # Drop the excluded subtypes from the expression side as well
 gex_cell_types <- sub("^.*_", "", colnames(expr))
 expr <- expr[, !gex_cell_types %in% drop.cell.types, drop = FALSE]
-gex_cell_types <- sub("^.*_", "", colnames(expr))
 
 # Only the motifs that are plain gene symbols have an expression row.
 # Dimer motifs such as FOSL1::JUND cannot be matched and are reported.
@@ -244,92 +371,138 @@ tf_expr <- expr[rownames(expr) %in% rownames(zscores_top), , drop = FALSE]
 unmatched <- setdiff(rownames(zscores_top), rownames(tf_expr))
 if (length(unmatched) > 0) {
   log_warn(length(unmatched), " motifs have no expression row and are dropped ",
-    "from both heatmaps: ", paste(head(unmatched, 10), collapse = ", "),
+    "from the paired heatmap: ", paste(head(unmatched, 10), collapse = ", "),
     if (length(unmatched) > 10) ", ..." else "")
 }
 if (nrow(tf_expr) < 2) {
   stop("Fewer than two motifs could be matched to gene expression")
 }
-
 tf_expr_z <- row_zscore(tf_expr)
-gex_types_factor <- factor(gex_cell_types, levels = intersect(
-  names(cell_type_colors), unique(gex_cell_types)
-))
-
-ha_gex <- HeatmapAnnotation(
-  celltypes = gex_cell_types,
-  col = list(celltypes = cell_type_colors[levels(gex_types_factor)])
-)
-hm_gex <- Heatmap(tf_expr_z,
-  name = "GEX Z-score",
-  column_names_gp = gpar(fontsize = 9),
-  top_annotation = ha_gex,
-  column_title = "TF Gene Expression (Z-Score)",
-  show_row_names = TRUE,
-  column_split = gex_types_factor,
-  cluster_columns = TRUE,
-  cluster_column_slices = TRUE,
-  col = colorRamp2(seq(-2, 2, length.out = 70), viridis(70))
-)
-
-file <- file.path(plot.dir, "gex_tf_expression_memTcells_mtfr_tfs.pdf")
-pdf(file, width = 10, height = 15)
-ht_gex <- draw(hm_gex)
-dev.off()
-log_info("Wrote ", file)
-
-# Row order of the expression heatmap, reused for the methylTFR heatmap
-row_order_vector <- rownames(tf_expr_z)[row_order(ht_gex)]
 
 #####################################################################
-# methylTFR heatmap, rows ordered by the expression clustering
+# Paired heatmap, methylTFR on the left, gene expression on the right
 #####################################################################
 
-zscores_ordered <- zscores_top[row_order_vector, , drop = FALSE]
-mtfr_cell_types <- sub("^.*_", "", colnames(zscores_ordered))
-mtfr_types_factor <- factor(mtfr_cell_types, levels = intersect(
-  names(cell_type_colors), unique(mtfr_cell_types)
-))
+# Same TFs, same order, on both sides
+shared_tfs <- intersect(rownames(zscores_top), rownames(tf_expr_z))
+if (!is.null(heatmap.tfs)) {
+  wanted <- intersect(heatmap.tfs, shared_tfs)
+  absent <- setdiff(heatmap.tfs, shared_tfs)
+  if (length(absent) > 0) {
+    log_warn(
+      length(absent), " of the requested TFs are missing from the deviations ",
+      "or the expression matrix and are not plotted: ",
+      paste(absent, collapse = ", ")
+    )
+  }
+  if (length(wanted) < 2) {
+    stop("Fewer than two of heatmap.tfs could be matched on both sides")
+  }
+  shared_tfs <- wanted
+  log_info("Paired heatmap restricted to ", length(shared_tfs), " requested TFs")
+}
+mtfr_mat <- zscores_top[shared_tfs, , drop = FALSE]
+gex_mat <- tf_expr_z[shared_tfs, , drop = FALSE]
 
-ha <- HeatmapAnnotation(
-  celltypes = mtfr_cell_types,
-  col = list(celltypes = cell_type_colors[levels(mtfr_types_factor)])
-)
-hm <- Heatmap(zscores_ordered,
+mtfr_types <- sub("^.*_", "", colnames(mtfr_mat))
+gex_types <- sub("^.*_", "", colnames(gex_mat))
+mtfr_split <- factor(mtfr_types, levels = intersect(names(cell_type_colors), unique(mtfr_types)))
+gex_split <- factor(gex_types, levels = intersect(names(cell_type_colors), unique(gex_types)))
+
+# Row-wise correlation between the two assays, over the samples that both
+# sides share. Donor_subtype labels make that intersection explicit rather
+# than assuming the two matrices are in the same column order.
+shared_samples <- intersect(colnames(mtfr_mat), colnames(gex_mat))
+log_info(length(shared_samples), " samples shared by methylTFR and gene expression: ",
+  paste(shared_samples, collapse = ", "))
+if (length(shared_samples) < 3) {
+  log_warn("Fewer than three shared samples, the row correlations are unstable")
+}
+row_cor <- vapply(shared_tfs, function(tf) {
+  suppressWarnings(cor(
+    as.numeric(mtfr_mat[tf, shared_samples]),
+    as.numeric(gex_mat[tf, shared_samples]),
+    method = "pearson", use = "complete.obs"
+  ))
+}, numeric(1))
+row_cor[!is.finite(row_cor)] <- 0
+
+ht_mtfr <- Heatmap(mtfr_mat,
   name = "methylTFR\nZ-scores",
-  column_names_gp = gpar(fontsize = 9),
-  top_annotation = ha,
-  column_title = "methylTFR Z-scores",
-  show_row_names = TRUE,
-  column_split = mtfr_types_factor,
+  col = mtfr_colors,
+  top_annotation = cell_type_annotation(mtfr_types),
+  column_split = mtfr_split,
   cluster_columns = TRUE,
-  cluster_rows = FALSE, # order comes from the expression heatmap
-  cluster_column_slices = TRUE
+  cluster_column_slices = FALSE,
+  cluster_rows = TRUE,
+  show_row_names = FALSE,
+  show_column_names = FALSE,
+  row_dend_side = "left",
+  column_title_gp = gpar(fontsize = 9),
+  heatmap_legend_param = list(at = seq(-zscore.limit, zscore.limit, by = 1))
 )
 
-file <- file.path(plot.dir, "mtfr_zscores_diffmotifs_memTcells.pdf")
-pdf(file, width = 10, height = 15)
-draw(hm)
+ht_gex <- Heatmap(gex_mat,
+  name = "TF expression\nZ-scores",
+  col = gex_colors,
+  top_annotation = cell_type_annotation(gex_types),
+  column_split = gex_split,
+  cluster_columns = TRUE,
+  cluster_column_slices = FALSE,
+  cluster_rows = FALSE, # row order comes from the methylTFR half
+  show_row_names = FALSE,
+  show_column_names = FALSE,
+  column_title_gp = gpar(fontsize = 9),
+  heatmap_legend_param = list(at = seq(-zscore.limit, zscore.limit, by = 1))
+)
+
+# Correlation strip and the TF labels, both to the right of the two halves
+ha_cor <- rowAnnotation(
+  `Row-Wise Pearson Correlation` = row_cor,
+  col = list(`Row-Wise Pearson Correlation` = cor_colors),
+  TF = anno_text(shared_tfs, gp = gpar(fontsize = 8)),
+  annotation_name_gp = gpar(fontsize = 0),
+  width = unit(30, "mm")
+)
+
+file <- file.path(plot.dir, "paired_heatmap_mtfr_gex_memTcells.pdf")
+pdf(file, width = 13, height = 11)
+draw(ht_mtfr + ht_gex + ha_cor,
+  merge_legend = TRUE,
+  heatmap_legend_side = "right"
+)
 dev.off()
 log_info("Wrote ", file)
+
+# The two halves on their own, for the supplement
+for (nm in c("mtfr", "gex")) {
+  ht <- if (nm == "mtfr") ht_mtfr else ht_gex
+  file <- file.path(plot.dir, paste0(nm, "_zscores_diffmotifs_memTcells.pdf"))
+  pdf(file, width = 8, height = 11)
+  draw(ht + rowAnnotation(TF = anno_text(shared_tfs, gp = gpar(fontsize = 8))))
+  dev.off()
+  log_info("Wrote ", file)
+}
 
 #####################################################################
 # Mean difference of the two contrasts
 #####################################################################
 
+# dplyr verbs are namespace qualified from here on: org.Hs.eg.db attaches
+# AnnotationDbi, whose select() masks dplyr::select() because it loads last
 comb_df <- results[["EM"]] %>%
-  select(motifs, zdiff_em = zdiff,
+  dplyr::select(motifs, zdiff_em = zdiff,
     mean_difference_em = mean_difference,
     p_value_adjusted_em = p_value_adjusted) %>%
-  inner_join(
+  dplyr::inner_join(
     results[["CM"]] %>%
-      select(motifs, zdiff_cm = zdiff,
+      dplyr::select(motifs, zdiff_cm = zdiff,
         mean_difference_cm = mean_difference,
         p_value_adjusted_cm = p_value_adjusted),
     by = "motifs"
   )
 
-comb_df$isDiff <- case_when(
+comb_df$isDiff <- dplyr::case_when(
   abs(comb_df$mean_difference_em) > cut.mean.diff & comb_df$p_value_adjusted_em < cut.padj &
     abs(comb_df$mean_difference_cm) > cut.mean.diff & comb_df$p_value_adjusted_cm < cut.padj ~ "Differential Both",
   abs(comb_df$mean_difference_em) > cut.mean.diff & comb_df$p_value_adjusted_em < cut.padj ~ "Differential EM",
@@ -337,9 +510,7 @@ comb_df$isDiff <- case_when(
   TRUE ~ "Not Differential"
 )
 
-# Label the strongest motifs of each single contrast. The label is taken
-# from the motifs column itself, the original carried a separate TF column
-# built from the row names of a differently ordered table.
+# Label the strongest motifs of each single contrast
 comb_df$label <- NA_character_
 for (grp in c("Differential EM", "Differential CM")) {
   col <- if (grp == "Differential EM") "mean_difference_em" else "mean_difference_cm"
@@ -351,14 +522,16 @@ for (grp in c("Differential EM", "Differential CM")) {
 
 cor_val <- cor(comb_df$zdiff_cm, comb_df$zdiff_em, method = "pearson", use = "complete.obs")
 
+diff_colors <- c(
+  "Differential CM" = "#41AB5D",
+  "Differential EM" = "#00441B",
+  "Differential Both" = "#8E0152",
+  "Not Differential" = "grey70"
+)
+
 p <- ggplot(comb_df, aes(x = zdiff_cm, y = zdiff_em, color = isDiff)) +
   geom_point(size = 2, alpha = 0.8) +
-  scale_color_manual(values = c(
-    "Differential CM" = "#377EB8",
-    "Differential EM" = "#E41A1C",
-    "Differential Both" = "#4DAF4A",
-    "Not Differential" = "grey70"
-  )) +
+  scale_color_manual(values = diff_colors) +
   geom_hline(yintercept = 0, linetype = "dashed", colour = "black", linewidth = 0.3) +
   geom_vline(xintercept = 0, linetype = "dashed", colour = "black", linewidth = 0.3) +
   labs(
@@ -384,74 +557,191 @@ ggsave(file, p, width = 10, height = 10)
 log_info("Wrote ", file)
 
 #####################################################################
-# LOLA enrichment against the methylTFR mean difference
+# LOLA: volcano plots, and enrichment against the methylTFR difference
 #####################################################################
 
 if (!file.exists(lola.file)) {
-  log_warn("LOLA results not found, skipping the last figure: ", lola.file)
+  log_warn("LOLA results not found, skipping the LOLA figures: ", lola.file)
 } else {
   res_lola <- readRDS(lola.file)
 
-  plotlog2OR <- function(df, title) {
-    x_max <- max(abs(df$log2OR), na.rm = TRUE)
-    y_max <- max(abs(df$zdiff), na.rm = TRUE)
-
-    df <- df %>%
-      mutate(isDiff = case_when(
-        p_value_adjusted < cut.padj & qValue < cut.padj ~ "Differential in both",
-        p_value_adjusted < cut.padj ~ "mTFR differential",
-        qValue < cut.padj ~ "LOLA differential",
-        TRUE ~ "Not differential"
-      ))
-    df$isDiff <- factor(df$isDiff, levels = c(
-      "Differential in both", "mTFR differential",
-      "LOLA differential", "Not differential"
-    ))
-    df$label <- ifelse(df$isDiff != "Not differential", df$motifs, NA)
-
-    ggplot(df, aes(x = log2OR, y = zdiff, color = isDiff)) +
-      geom_point(alpha = 0.7, size = 3) +
-      labs(
-        title = title,
-        x = expression(Log[2] ~ "Odds Ratio (LOLA Enrichment)"),
-        y = expression("Z-Score Difference (mTFR Activity)"),
-        color = "Differential Status"
-      ) +
-      scale_x_continuous(limits = c(-x_max, x_max)) +
-      scale_y_continuous(limits = c(-y_max, y_max)) +
-      theme_classic(base_size = 14) +
-      scale_color_manual(values = c(
-        "Differential in both" = "red",
-        "mTFR differential" = "darkgreen",
-        "LOLA differential" = "dodgerblue",
-        "Not differential" = "gray50"
-      )) +
-      geom_text_repel(aes(label = label), size = 3.5, box.padding = 0.5, max.overlaps = 15) +
-      geom_hline(yintercept = 0, linetype = "dotted", colour = "black") +
-      geom_vline(xintercept = 0, linetype = "dotted", colour = "black")
+  # Resolve each contrast once, by name, and reuse it for both LOLA figures
+  lola_hits <- list()
+  for (nm in names(comparisons)) {
+    hit <- tryCatch(
+      {
+        h <- resolve_lola_comparison(res_lola,
+          test = comparisons[[nm]]$test, ref = comparisons[[nm]]$ref,
+          override = lola.comparison[[nm]]
+        )
+        h$region <- resolve_lola_region(res_lola, h$index, lola.region)
+        h
+      },
+      error = function(e) {
+        log_warn(nm, ": ", conditionMessage(e))
+        NULL
+      }
+    )
+    if (is.null(hit)) next
+    log_info(nm, " -> \"", hit$name, "\", region ", hit$region,
+      " (hyper means hypermethylated in ", hit$grp1, ")")
+    lola_hits[[nm]] <- hit
   }
 
-  for (nm in names(comparisons)) {
-    i <- lola.index[[nm]]
-    if (is.null(res_lola$region[[i]]) || is.null(res_lola$region[[i]][[lola.region]])) {
-      log_warn(nm, ": res_lola$region[[", i, "]]$", lola.region,
-        " is missing, check lola.index. Available: ",
-        paste(names(res_lola$region), collapse = ", "))
-      next
+  # Volcano per contrast, from lola_utils.R
+  for (nm in names(lola_hits)) {
+    hit <- lola_hits[[nm]]
+    ok <- tryCatch(
+      {
+        lolaVolcanoPlot(
+          lolaRes = res_lola, outputDir = plot.dir,
+          comparison = hit$index, region = hit$region,
+          label = paste0(nm, "_vs_", comparisons[[nm]]$ref),
+          grp1 = hit$grp1, grp2 = hit$grp2,
+          n.label = top.label.lola,
+          userSets = lola.userSets,
+          cell_colors = cell_type_colors
+        )
+        TRUE
+      },
+      error = function(e) {
+        log_warn(nm, " volcano: ", conditionMessage(e))
+        FALSE
+      }
+    )
+    if (ok) log_info("Wrote the LOLA volcano for ", nm)
+  }
+
+  # Enrichment against the methylTFR Z-score difference.
+  # grp1 is the memory subtype, grp2 the naive reference, and the header
+  # arrow says which side of the x axis belongs to which.
+  plotlog2OR <- function(df, grp1, grp2) {
+    df <- df %>%
+      dplyr::mutate(isDiff = dplyr::case_when(
+        p_value_adjusted < cut.padj.mtfr & qValue < cut.qval.lola ~ "Differential in both",
+        p_value_adjusted < cut.padj.mtfr ~ "mTFR differential",
+        qValue < cut.qval.lola ~ "LOLA differential",
+        TRUE ~ "Not differential"
+      ))
+    df$isDiff <- factor(df$isDiff, levels = names(status_colors))
+    log_info(
+      "  categories: ",
+      paste(names(table(df$isDiff)), table(df$isDiff), sep = " = ", collapse = ", ")
+    )
+
+    # Labels per category, ranked by the quantity that defines it: the
+    # combined effect for the motifs differential in both assays, the mTFR
+    # effect or the LOLA odds ratio for the single assay ones.
+    df$label <- NA_character_
+    for (cat in names(label.n)) {
+      n_cat <- label.n[[cat]]
+      if (n_cat <= 0) next
+      rows <- which(df$isDiff == cat)
+      if (length(rows) == 0) next
+      rank_by <- switch(cat,
+        "Differential in both" = sqrt(df$zdiff[rows]^2 + df$log2OR[rows]^2),
+        "mTFR differential" = abs(df$zdiff[rows]),
+        "LOLA differential" = abs(df$log2OR[rows]),
+        rep(0, length(rows))
+      )
+      keep <- rows[order(rank_by, decreasing = TRUE)[seq_len(min(n_cat, length(rows)))]]
+      df$label[keep] <- df$motifs[keep]
     }
-    lola <- res_lola$region[[i]][[lola.region]]
+    log_info("  labelling ", sum(!is.na(df$label)), " motifs")
+
+    x_max <- max(abs(df$log2OR), na.rm = TRUE)
+    y_max <- max(abs(df$zdiff), na.rm = TRUE)
+    cor_val <- suppressWarnings(cor(df$log2OR, df$zdiff,
+      method = "pearson", use = "complete.obs"))
+
+    # Room for the labels to escape into. The points saturate near the top
+    # of the y range, so the panel is padded and the header sits above it.
+    x_lim <- x_max * 1.22
+    y_lim <- y_max * 1.20
+    y_head <- y_max * 1.34
+
+    # Non differential points first so the coloured ones sit on top
+    df <- df[order(df$isDiff, decreasing = TRUE), ]
+
+    ggplot(df, aes(x = log2OR, y = zdiff, color = isDiff)) +
+      geom_hline(yintercept = 0, linetype = "dotted", colour = "black") +
+      geom_vline(xintercept = 0, linetype = "dotted", colour = "black") +
+      geom_point(aes(alpha = isDiff), size = 2.4) +
+      scale_alpha_manual(values = c(
+        "Differential in both" = 0.9, "mTFR differential" = 0.9,
+        "LOLA differential" = 0.9, "Not differential" = 0.45
+      ), guide = "none") +
+      geom_text_repel(aes(label = label),
+        size = 2.9,
+        box.padding = 0.55,
+        point.padding = 0.25,
+        min.segment.length = 0,
+        segment.size = 0.25,
+        segment.alpha = 0.55,
+        force = 6,
+        force_pull = 0.4,
+        max.overlaps = Inf,
+        max.iter = 30000,
+        max.time = 3,
+        seed = 42,
+        show.legend = FALSE
+      ) +
+      scale_color_manual(values = status_colors, drop = FALSE) +
+      # Direction header, drawn above the panel
+      annotate("point", x = -x_lim, y = y_head, colour = cell_type_colors[[grp2]], size = 3.5) +
+      annotate("text", x = -x_lim * 0.90, y = y_head, label = grp2, hjust = 0, size = 4.5) +
+      annotate("segment",
+        x = -x_lim * 0.70, xend = x_lim * 0.70, y = y_head, yend = y_head,
+        arrow = arrow(ends = "both", length = unit(2, "mm")), linewidth = 0.4
+      ) +
+      annotate("text", x = x_lim * 0.90, y = y_head, label = grp1, hjust = 1, size = 4.5) +
+      annotate("point", x = x_lim, y = y_head, colour = cell_type_colors[[grp1]], size = 3.5) +
+      annotate("text",
+        x = -x_lim, y = -y_lim, hjust = 0, vjust = 0, size = 4,
+        label = paste0("Correlation: ", round(cor_val, 2))
+      ) +
+      labs(
+        title = paste(grp1, "vs", grp2, "differentials"),
+        x = expression(Log[2] ~ "Odds Ratio (LOLA Enrichment)"),
+        y = "Z-Score Difference (mTFR Activity)",
+        color = "Differential Status"
+      ) +
+      coord_cartesian(
+        xlim = c(-x_lim, x_lim), ylim = c(-y_lim, y_lim), clip = "off"
+      ) +
+      theme_classic(base_size = 14) +
+      theme(
+        plot.title = element_text(hjust = 0.5, size = 14),
+        plot.margin = margin(t = 30, r = 14, b = 6, l = 14),
+        legend.position = "bottom"
+      ) +
+      guides(colour = guide_legend(override.aes = list(size = 3.5, label = "")))
+  }
+
+  for (nm in names(lola_hits)) {
+    hit <- lola_hits[[nm]]
+    lola <- res_lola$region[[hit$index]][[hit$region]]
     lola <- lola[lola$userSet %in% lola.userSets, ]
     if (nrow(lola) == 0) {
       log_warn(nm, ": no rows for userSets ", paste(lola.userSets, collapse = ", "))
       next
     }
 
-    # Hypermethylated in the memory subtype, hypomethylated in naive
-    lola$condition <- ifelse(grepl("hyper$", lola$userSet), comparisons[[nm]]$test, comparisons[[nm]]$ref)
+    # hyper refers to group1 of the comparison name, which is not always the
+    # memory subtype, so the direction is taken from the name rather than
+    # assumed to be the test group
+    lola$condition <- ifelse(grepl("hyper$", lola$userSet), hit$grp1, hit$grp2)
     lola$log2OR <- log2(lola$oddsRatio)
     lola$log2OR <- ifelse(lola$condition == comparisons[[nm]]$ref, -lola$log2OR, lola$log2OR)
+    # Rows with no description cannot be named, gsub would make them NA
+    n_before <- nrow(lola)
+    lola <- lola[!is.na(lola$description), ]
+    if (nrow(lola) < n_before) {
+      log_warn(nm, ": dropped ", n_before - nrow(lola),
+        " LOLA rows without a description")
+    }
     lola$motifs <- gsub(".*_", "", lola$description)
-    lola <- lola[, c("motifs", "log2OR", "qValue")]
+    lola <- lola[!is.na(lola$motifs) & nzchar(lola$motifs), c("motifs", "log2OR", "qValue")]
 
     merged <- merge(
       results[[nm]][, c("motifs", "zdiff", "p_value_adjusted")],
@@ -470,10 +760,54 @@ if (!file.exists(lola.file)) {
       "lola_log2OR_vs_mtfr_meanDiff_", tolower(nm), "_vs_tn.pdf"
     ))
     ggsave(file,
-      plotlog2OR(merged, paste0("Motif enrichment vs activity difference, ", nm, " vs TN")),
-      width = 8, height = 6
+      plotlog2OR(merged, grp1 = hit$grp1, grp2 = hit$grp2),
+      width = 10, height = 8.5
     )
     log_info("Wrote ", file)
+  }
+}
+
+#####################################################################
+# RnBeads differential methylation: density scatter and MA plots
+#####################################################################
+
+if (!dir.exists(diffmeth.dir)) {
+  log_warn("Differential methylation results not found, skipping: ", diffmeth.dir)
+} else {
+  diffMeth <- load.rnb.diffmeth(diffmeth.dir)
+  cmps <- get.comparisons(diffMeth)
+  log_info(length(cmps), " comparisons: ", paste(names(cmps), collapse = " | "))
+
+  for (region in diffmeth.regions) {
+    for (i in seq_along(cmps)) {
+      tag <- gsub("[^A-Za-z0-9]+", "_", names(cmps)[i])
+
+      p_dens <- tryCatch(
+        rnbeadsDensityScatter(diffMeth, region, comparison = i, p.cut = cut.padj),
+        error = function(e) {
+          log_warn("density scatter ", region, " / ", tag, ": ", conditionMessage(e))
+          NULL
+        }
+      )
+      if (!is.null(p_dens)) {
+        file <- file.path(plot.dir, paste0("density_scatter_", region, "_", tag, ".pdf"))
+        ggsave(file, p_dens, width = 6, height = 6)
+        log_info("Wrote ", file)
+      }
+
+      p_ma <- tryCatch(
+        maPlot(diffMeth, region, comparison = i, p.cut = cut.padj),
+        error = function(e) {
+          log_warn("MA plot ", region, " / ", tag, ": ", conditionMessage(e))
+          NULL
+        }
+      )
+      if (!is.null(p_ma)) {
+        file <- file.path(plot.dir, paste0("ma_plot_", region, "_", tag, ".pdf"))
+        ggsave(file, p_ma, width = 7, height = 6)
+        log_info("Wrote ", file)
+      }
+    }
   }
 }
 

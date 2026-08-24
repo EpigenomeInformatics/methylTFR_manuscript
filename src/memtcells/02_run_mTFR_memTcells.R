@@ -27,13 +27,6 @@ chunk.size <- 15
 # works on the same samples
 drop.samples <- "51_Hf03_BlTR_Ct_WGBS_S_1.MCSv3.20170714.GRCh38.cpg.filtered.CG.bed"
 
-# Directory where the annotation resources are stored locally
-#annotation.dir <- "/icbb/projects/share/annotations/methylTFRAnnotationHg38/inst/extdata"
-#if (!dir.exists(annotation.dir)) {
-#  stop("Annotation directory does not exist: ", annotation.dir)
-#}
-#options(methylTFRAnnotationHg38.datadir = annotation.dir)
-
 # Distal regions used to restrict the jaspar2020_distal run.
 # Ensembl Regulatory Build v104, hg38, filtered to distal. This is the same
 # region set that jaspar2020_distal_motif_gcfreq.rds was built against, so it

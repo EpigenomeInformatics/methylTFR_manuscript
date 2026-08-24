@@ -63,7 +63,10 @@ plot.dir <- file.path(analysis.dir, "mFoot_230826")
 if (!dir.exists(plot.dir)) dir.create(plot.dir, recursive = TRUE)
 
 # Transcription factors of interest
-tfs <- unique(c("JUN", "RELB", "FOS", "FOXP2", "BATF", "IRF4", "SP1", "FOSL2"))
+tfs <- unique(c(
+  "JUN", "JUN(var.2)", "RELB", "FOS", "FOXP2",
+  "BATF", "IRF4", "SP1", "SPIB", "FOSL2"
+))
 
 #####################################################################
 # Helper functions
