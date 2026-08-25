@@ -5,8 +5,7 @@
 # created on 14-05-2025 by Irem B Gunduz
 # Updated by IBG on 23-08-2026
 # PCA of the methylTFR deviations of the CD4 memory T cell subtypes.
-# Replaces 03_plot_memTcells.R, whose differential test is done
-# properly in 06_differential_TFs.R
+# The differential test of these subtypes is in 06_differential_TFs.R
 #####################################################################
 
 suppressPackageStartupMessages({
@@ -19,28 +18,29 @@ suppressPackageStartupMessages({
 })
 set.seed(42)
 
+src.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/src"
+source(file.path(src.dir, "utils.R"))
+
 #####################################################################
 # Settings
 #####################################################################
 
 motifSets <- c("jaspar2020", "jaspar2020_distal")
 
-# PCA on the raw deviation matrix, as in the blueprint scripts
+# PCA is run on the raw deviation matrix
 pca.center <- FALSE
 pca.scale <- FALSE
 
 # TEMRA is unreplicated and excluded everywhere
 drop.cell.types <- "TEMRA"
 
-# Both spellings are listed because the cellType column of the sample
-# annotation and the cleaned RNA sample names disagree on the T prefix
+# Green scheme from utils.R. Both spellings are listed because the
+# cellType column of the sample annotation and the cleaned RNA sample
+# names disagree on the T prefix.
 cell_type_colors <- c(
-  "TN" = "#C8E0B4",
-  "TCM" = "#4492C6",
-  "CM" = "#4492C6",
-  "TEM" = "#43B6C4",
-  "EM" = "#43B6C4",
-  "TEMRA" = "#898FB5"
+  CELL_TYPE_COLORS,
+  "CM" = unname(CELL_TYPE_COLORS[["TCM"]]),
+  "EM" = unname(CELL_TYPE_COLORS[["TEM"]])
 )
 
 # Directories
@@ -54,8 +54,7 @@ if (!dir.exists(fig.dir)) dir.create(fig.dir, recursive = TRUE)
 # Helper functions
 #####################################################################
 
-# Cell type of each column, taken from the annotation carried by the
-# object rather than from a grepl on the file names
+# Cell type of each column, taken from the annotation carried by the object
 sample_cell_types <- function(dev_obj) {
   cd <- as.data.frame(colData(dev_obj), stringsAsFactors = FALSE)
   if (!"cellType" %in% colnames(cd)) {
