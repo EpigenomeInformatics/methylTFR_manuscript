@@ -84,7 +84,10 @@ seFoot <- getFootprints(
 plotFootprints(
   seFoot = seFoot,
   ArchRProj = project,
-  normMethod = "divide",
+  # Subtraction, to match the methylTFR footprints of 03_mfoot_v2.R.
+  # ArchR divides by the Tn5 bias track by default, which is not on the
+  # same scale as the subtracted methylTFR curves.
+  normMethod = "subtract",
   pal = cell_type_colors,
   plotName = "Integrative_Footprints_JASPAR_by_cellType",
   addDOC = FALSE

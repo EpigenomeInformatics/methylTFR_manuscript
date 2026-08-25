@@ -226,6 +226,16 @@ p_dot <- ggplot(top_by_factor, aes(x = factor, y = feature, size = value_abs, co
 
 ggsave(filename = file.path(plot_dir, "topTFs_dotplot_signed.pdf"), plot = p_dot, width = 10, height = 6)
 
+# The ECHO top TFs, written out so the footprint scripts can use this
+# dataset's own list instead of the Blueprint one
+table_dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/tables"
+if (!dir.exists(table_dir)) dir.create(table_dir, recursive = TRUE)
+write.csv(
+  top_by_factor[, c("feature", "factor", "view", "value", "value_abs")],
+  file.path(table_dir, "mofa_echo_topTFs.csv"),
+  row.names = FALSE
+)
+
 # Combine panels into a single figure for main text (example)
 # Use p_factors_scatter, p_modality_frac, p_variance_expl, p_dot
 combined_fig <- (p_factors_scatter + p_modality_frac) / (p_variance_expl + p_dot) + plot_annotation(tag_levels = "A")
