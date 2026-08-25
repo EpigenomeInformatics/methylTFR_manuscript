@@ -27,6 +27,18 @@ set.seed(42)
 # Motif sets whose deviations enter the PCA and the stability analysis
 motifSets <- c("jaspar2020", "jaspar2020_distal")
 
+# Cell type groups excluded from the PCA and the stability analysis.
+# "Other" collects samples with no assigned cell type, matching 08_bp_mofa.R
+drop.cell.types <- "Other"
+
+# Uncorrected control. The deviations assay holds observed minus expected
+# methylation, so adding the expected assay back recovers the observed
+# methylation before the GC correction. Kept out of the stability analysis
+# by default, so the accuracy table stays comparable across runs.
+add.uncorrected <- TRUE
+uncorrected.motifSet <- "jaspar2020"
+uncorrected.in.stability <- FALSE
+
 # PCA is run on the raw matrices, without centring or scaling
 pca.center <- FALSE
 pca.scale <- FALSE
@@ -273,7 +285,20 @@ for (nm in names(dev.files)) {
     next
   }
   log_info("Loading deviations from ", dev.files[[nm]])
-  dev_mats[[nm]] <- deviations(readRDS(dev.files[[nm]]))
+  dev_obj <- readRDS(dev.files[[nm]])
+  dev_mats[[nm]] <- deviations(dev_obj)
+
+  # Observed methylation, before the GC expectation is subtracted
+  if (add.uncorrected && nm == paste0("mTFR_", uncorrected.motifSet)) {
+    if (!"expected" %in% SummarizedExperiment::assayNames(dev_obj)) {
+      log_warn(nm, ": no expected assay, the uncorrected representation is skipped")
+    } else {
+      dev_mats[[paste0(nm, "_uncorrected")]] <- deviations(dev_obj) +
+        SummarizedExperiment::assay(dev_obj, "expected")
+      log_info(nm, ": added the uncorrected representation")
+    }
+  }
+  rm(dev_obj)
 }
 if (length(dev_mats) == 0) {
   stop("None of the deviation files were found, run 02 first")
@@ -302,6 +327,21 @@ mats <- c(dev_mats, list(Distal = distal, Tiling1kb = tiling))
 # Healthy samples carrying a mappable cell type, NAs are dropped here
 ann_ok <- !is.na(sannot$DISEASE) & sannot$DISEASE == "None" &
   sannot$cellTypeGroup %in% names(group_remap)
+
+# Groups that are not a defined cell type are excluded from both the PCA and
+# the classifier, so the accuracy is over labelled cell types only
+if (length(drop.cell.types) > 0) {
+  mapped <- unname(group_remap[sannot$cellTypeGroup])
+  drop_idx <- which(ann_ok & mapped %in% drop.cell.types)
+  if (length(drop_idx) > 0) {
+    log_info(
+      "Dropping ", length(drop_idx), " samples from ",
+      paste(sort(unique(mapped[drop_idx])), collapse = ", ")
+    )
+    ann_ok[drop_idx] <- FALSE
+  }
+}
+
 healthy <- sannot$bedFile[which(ann_ok)]
 common.samples <- Reduce(intersect, c(list(healthy), lapply(mats, colnames)))
 
@@ -336,10 +376,16 @@ for (nm in names(pca_list)) {
 # Stability analysis with Random Forests on the PCs
 #####################################################################
 
-n_pcs <- vapply(names(pca_list), function(nm) select_pcs(pca_list[[nm]], nm), integer(1))
+# The uncorrected control is plotted but, by default, left out of the classifier
+stability.reps <- names(pca_list)
+if (!uncorrected.in.stability) {
+  stability.reps <- grep("_uncorrected$", stability.reps, value = TRUE, invert = TRUE)
+}
 
-pcs <- lapply(names(pca_list), function(nm) get_pc_matrix(pca_list[[nm]], n_pcs[[nm]]))
-names(pcs) <- names(pca_list)
+n_pcs <- vapply(stability.reps, function(nm) select_pcs(pca_list[[nm]], nm), integer(1))
+
+pcs <- lapply(stability.reps, function(nm) get_pc_matrix(pca_list[[nm]], n_pcs[[nm]]))
+names(pcs) <- stability.reps
 
 # Repeated stratified hold out splits
 log_info("Random Forest with ", rf.repeats, " stratified splits")

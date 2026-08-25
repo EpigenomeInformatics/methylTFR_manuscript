@@ -119,6 +119,8 @@ identify a processing run and appear in the output directory names.
 
 | Script | Description |
 |---|---|
+| `00a_read_pseudobulk_devs.R` | reads the per cell type sample pseudobulk deviations and checks that they share one motif set |
+| `00b_merge_pseudobulk_devs.R` | merges them into a single `methylTFRdeviations` object carrying the sample annotation |
 | `01_mofa_integration.R` | MOFA2 on the chromVAR and methylTFR pseudobulk matrices |
 | `02_echo_cell_pseudobulks.R` | cell type pseudobulks from the methylation data |
 | `03_mfoot_meth.R` | observed minus expected methylation footprints |
@@ -127,9 +129,15 @@ identify a processing run and appear in the output directory names.
 | `05_plot.R` | paired methylTFR and chromVAR heatmap, correlation by methyl-SELEX call, per factor activity scatters |
 | `debug_sc_mtfr.R` | diagnostic that runs the pipeline serially on a single allc file |
 
+The pseudobulk deviations are one object per cell type, with donor samples in
+the columns, scored against `jaspar2020_distal`. Cell type is the token before
+the first underscore of the sample name, and the rest of the annotation travels
+in the `colData` of the objects themselves.
+
 Both footprint scripts use subtraction, so the methylation and accessibility
 panels are on the same scale. The transcription factors shown are taken from the
-ECHO MOFA factor table.
+ECHO MOFA factor table, and the methylation footprints carry the mean deviation
+of each cell type in the legend.
 
 ---
 
