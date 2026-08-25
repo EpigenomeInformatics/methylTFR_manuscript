@@ -14,10 +14,10 @@ deviation per motif and sample.
 
 | Package | Purpose |
 |---|---|
-| `methylTFR` | analysis package |
-| `methylTFRAnnotationHg38` | motif binding sites, GC frequency tables and the genome-wide GC distribution for hg38 |
-| `methylTFRAnnotationMm10` | the same resources for mm10 |
-| `methylTFRAnnotationBuilder` | builds annotation resources for a new genome or motif set |
+| [`methylTFR`](https://github.com/EpigenomeInformatics/methylTFR) | analysis package |
+| [`methylTFRAnnotationHg38`](https://github.com/EpigenomeInformatics/methylTFRAnnotationHg38) | motif binding sites, GC frequency tables and the genome-wide GC distribution for hg38 |
+| [`methylTFRAnnotationMm10`](https://github.com/EpigenomeInformatics/methylTFRAnnotationMm10) | the same resources for mm10 |
+| [`methylTFRAnnotationBuilder`](https://github.com/EpigenomeInformatics/methylTFRAnnotationBuilder) | builds annotation resources for a new genome or motif set |
 
 ### Installation
 
@@ -37,6 +37,10 @@ BiocManager::install("AnnotationHubData")   # only needed to build annotations
 ```r
 devtools::install_github("EpigenomeInformatics/methylTFR")
 devtools::install_github("EpigenomeInformatics/methylTFRAnnotationHg38")
+
+# Only needed outside hg38
+devtools::install_github("EpigenomeInformatics/methylTFRAnnotationMm10")
+devtools::install_github("EpigenomeInformatics/methylTFRAnnotationBuilder")
 ```
 
 Annotation resources are retrieved from AnnotationHub on first use and cached
