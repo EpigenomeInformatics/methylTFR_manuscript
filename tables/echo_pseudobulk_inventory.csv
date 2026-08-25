@@ -1,0 +1,8 @@
+"cell_type","n_samples","n_motifs","n_motifs_nonfinite"
+"Th-Naive",38,632,3
+"Th-Mem",38,632,0
+"Tc-Naive",38,632,0
+"Tc-Mem",38,632,0
+"B-cell",38,632,0
+"NK-cell",38,632,0
+"Monocyte",38,632,0

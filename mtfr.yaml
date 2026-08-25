@@ -1,0 +1,40 @@
+name: mtfr
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - r-base=4.3.*
+  - r-devtools
+  - r-roxygen2
+  - r-pkgdown
+  - r-biocmanager
+  - r-data.table
+  - r-ggplot2
+  - r-logger
+  - r-matrixstats
+  - r-r.utils
+  - bioconductor-summarizedexperiment
+  - bioconductor-biocgenerics
+  - bioconductor-delayedarray
+  - bioconductor-genomicranges
+  - bioconductor-hdf5array
+  - bioconductor-iranges
+  - bioconductor-s4vectors
+  - bioconductor-annotationdbi
+  - bioconductor-annotationhub
+  - bioconductor-keggrest
+  - bioconductor-BiocStyle
+  - bioconductor-bioccheck
+# For the annotation package, manually install: BiocManager::install("AnnotationHubData") 
+# - r-xml # RnBeads depends on this package
+#  - bioconductor-rsamtools # RnBeads depends on this package
+#  - bioconductor-genomicalignments # RnBeads depends on this package
+#  - bioconductor-rtracklayer # RnBeads depends on this package
+#  - bioconductor-genomicfeatures # RnBeads depends on this package
+#  - bioconductor-txdb.hsapiens.ucsc.hg19.knowngene # RnBeads depends on this package
+#  - bioconductor-bumphunter # RnBeads depends on this package
+#  - bioconductor-fdb.infiniummethylation.hg19 # RnBeads depends on this package
+#  - bioconductor-minfi # RnBeads depends on this package
+#  - bioconductor-methylumi # RnBeads depends on this package
+# - bioconductor-rnbeads # May cause conflicts; you may need to install this package separately using BiocManager::install("RnBeads")
