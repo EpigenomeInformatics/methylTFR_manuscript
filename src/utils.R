@@ -98,64 +98,78 @@ rnbeadsDensityScatter <- function(diffMeth, region, comparison = 1, p.cut = 0.05
   list(index = comparison, name = names(cmps)[comparison], cmp = cmps[names(cmps)[comparison]])
 }
 
-#' Density scatter with the differential regions taken from the RANK CUT.
+#' Density scatters with the differential regions taken from the RANK CUT.
 #'
-#' The companion of rnbeadsDensityScatter, which highlights regions by
-#' adjusted p-value. Here a region counts as differential when its RnBeads
-#' combinedRank falls within the top `rank.cut`, which is the same criterion
-#' the LOLA enrichment uses through its rankCut_<n>_hyper / _hypo user sets.
-#' Using it here keeps the scatter and the enrichment panels describing the
-#' same set of regions.
+#' The version from the scripts folder: RnBeads picks the cut itself per
+#' comparison with auto.select.rank.cut, and the function returns a NAMED
+#' LIST of plots, one per comparison, rather than a single panel.
 #'
-#' @param diffMeth an RnBeads differential methylation object
-#' @param region region type, e.g. "tiling1kb" or "sites"
-#' @param comparison name or index of the comparison to plot
-#' @param rank.cut how many top ranking regions count as differential
-#' @param auto.rank.cut if TRUE, RnBeads picks the cut itself and rank.cut
-#' is only the fallback when that fails
-rnbeadsDensityScatterRankCut <- function(diffMeth, region, comparison = 1,
-                                         rank.cut = 1000, auto.rank.cut = FALSE) {
-  cc <- .diffmeth_comparison(diffMeth, comparison)
-  df2p <- get.table(diffMeth, cc$cmp, region, return.data.frame = TRUE)
-  grp.names <- get.comparison.grouplabels(diffMeth)[cc$cmp, ]
+#' Two things were corrected. The argument is `diffmeth` but the loop read
+#' `diffMeth`, so it only ran when a global of that name happened to exist
+#' and silently used it instead of the argument. And `alpha` was declared
+#' but the hardcoded 0.1 was used, so passing it had no effect.
+#'
+#' @param diffmeth an RnBeads differential methylation object
+#' @param region region type, e.g. "distal", "tiling1kb" or "sites"
+#' @param alpha significance level handed to auto.select.rank.cut
+#' @param sparse.points passed to create.densityScatter
+#' @param dens.subsample passed to create.densityScatter
+#' @return a named list of ggplot objects, one per comparison
+rnbeadsDensityScatterRankCut <- function(diffmeth, region = "distal", alpha = 0.1,
+                                         sparse.points = 0.01,
+                                         dens.subsample = FALSE) {
+  plot_list <- list()
+  comps <- get.comparisons(diffmeth)
 
-  if (!"combinedRank" %in% colnames(df2p)) {
-    stop(
-      "No combinedRank column in the ", region, " table of ", cc$name,
-      ". Present: ", paste(colnames(df2p), collapse = ", ")
+  # One automatically selected rank cut per comparison
+  rank.cuts.auto <- lapply(seq_along(comps), function(i) {
+    dmt <- get.table(diffmeth, comps[i], region, return.data.frame = TRUE)
+    res <- RnBeads:::auto.select.rank.cut(
+      dmt$comb.p.adj.fdr, dmt$combinedRank,
+      alpha = alpha
     )
+    as.integer(res)
+  })
+  tt <- data.frame(unlist(rank.cuts.auto))
+  colnames(tt) <- "Rank Cutoff"
+  rownames(tt) <- names(comps)
+
+  for (i in seq_along(comps)) {
+    cc <- names(comps)[i]
+    ccc <- comps[cc]
+    dmt <- get.table(diffmeth, ccc, region, return.data.frame = TRUE)
+    ccn <- ifelse(RnBeads:::is.valid.fname(cc), cc, paste("cmp", i, sep = ""))
+    grp.names <- get.comparison.grouplabels(diffmeth)[ccc, ]
+    df2p <- dmt
+    gc()
+    autoRankCut <- tt[i, ]
+
+    if (is.element("combinedRank", colnames(df2p))) {
+      df2p$isDMP <- df2p[, "combinedRank"] <= autoRankCut
+      message(
+        cc, " / ", region, ": rank cut ", autoRankCut, ", ",
+        sum(df2p$isDMP, na.rm = TRUE), " of ", nrow(df2p), " highlighted"
+      )
+      # Region tables carry mean.mean.g*, site tables mean.g*
+      mcols <- .diffmeth_mean_cols(df2p)
+      pp <- create.densityScatter(df2p[, c(mcols[2], mcols[1])],
+        is.special = df2p$isDMP,
+        dens.subsample = dens.subsample,
+        sparse.points = sparse.points, add.text.cor = TRUE
+      ) +
+        labs(
+          x = paste("Mean-Methylation (", grp.names[2], ")", sep = " "),
+          y = paste("Mean-Methylation (", grp.names[1], ")", sep = "  ")
+        ) +
+        coord_fixed() +
+        theme_classic() +
+        theme(legend.position = "none")
+
+      plot_list[[ccn]] <- pp
+    }
   }
 
-  cut_used <- rank.cut
-  if (auto.rank.cut) {
-    p_col <- intersect(c("comb.p.val", "comb.p.adj.fdr"), colnames(df2p))[1]
-    cut_used <- tryCatch(
-      RnBeads:::auto.select.rank.cut(df2p[[p_col]], df2p$combinedRank, alpha = 0.1),
-      error = function(e) {
-        message("auto rank cut failed (", conditionMessage(e), "), using ", rank.cut)
-        rank.cut
-      }
-    )
-  }
-  n_special <- sum(!is.na(df2p$combinedRank) & df2p$combinedRank <= cut_used)
-  message(
-    cc$name, " / ", region, ": rank cut ", cut_used, ", ",
-    n_special, " of ", nrow(df2p), " regions highlighted"
-  )
-  df2p$isDMP <- !is.na(df2p$combinedRank) & df2p$combinedRank <= cut_used
-
-  mcols <- .diffmeth_mean_cols(df2p)
-  create.densityScatter(df2p[, c(mcols[2], mcols[1])],
-    is.special = df2p$isDMP,
-    dens.subsample = TRUE, sparse.points = 0.001, add.text.cor = TRUE
-  ) +
-    labs(
-      x = paste0("Mean-Methylation ( ", grp.names[2], " )"),
-      y = paste0("Mean-Methylation ( ", grp.names[1], " )")
-    ) +
-    coord_fixed() +
-    theme_classic() +
-    theme(legend.position = "none")
+  return(plot_list)
 }
 
 #' MA plot of the group mean methylation for one comparison.

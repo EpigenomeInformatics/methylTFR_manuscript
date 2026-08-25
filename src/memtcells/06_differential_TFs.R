@@ -138,8 +138,13 @@ lola.userSets <- c("rankCut_1000_hyper", "rankCut_1000_hypo")
 diffmeth.regions <- c("tiling1kb", "distal", "sites")
 
 # Differential regions on those two panels come from the RnBeads combined
-# rank, not from the adjusted p-value, which is the same criterion the LOLA
-# enrichment uses through its rankCut_1000_hyper / _hypo user sets.
+# rank, not from the adjusted p-value. The density scatter lets RnBeads
+# choose the cut per comparison at this alpha.
+diffmeth.alpha <- 0.1
+
+# The MA plot uses the same automatic cut, falling back to this fixed one
+# if auto.select.rank.cut fails
+diffmeth.auto.rank.cut <- TRUE
 diffmeth.rank.cut <- 1000
 
 # Directories
@@ -864,26 +869,29 @@ if (!dir.exists(diffmeth.dir)) {
   log_info(length(cmps), " comparisons: ", paste(names(cmps), collapse = " | "))
 
   for (region in diffmeth.regions) {
+    # One call per region: the rank cut version returns a named list with
+    # one plot per comparison, each with its own automatically chosen cut
+    dens_plots <- tryCatch(
+      rnbeadsDensityScatterRankCut(diffMeth, region, alpha = diffmeth.alpha),
+      error = function(e) {
+        log_warn("density scatter ", region, ": ", conditionMessage(e))
+        NULL
+      }
+    )
+    for (nm in names(dens_plots)) {
+      tag <- gsub("[^A-Za-z0-9]+", "_", nm)
+      file <- file.path(plot.dir, paste0("density_scatter_", region, "_", tag, ".pdf"))
+      ggsave(file, dens_plots[[nm]], width = 6, height = 6)
+      log_info("Wrote ", file)
+    }
+
     for (i in seq_along(cmps)) {
       tag <- gsub("[^A-Za-z0-9]+", "_", names(cmps)[i])
-
-      p_dens <- tryCatch(
-        rnbeadsDensityScatterRankCut(diffMeth, region,
-          comparison = i, rank.cut = diffmeth.rank.cut
-        ),
-        error = function(e) {
-          log_warn("density scatter ", region, " / ", tag, ": ", conditionMessage(e))
-          NULL
-        }
-      )
-      if (!is.null(p_dens)) {
-        file <- file.path(plot.dir, paste0("density_scatter_", region, "_", tag, ".pdf"))
-        ggsave(file, p_dens, width = 6, height = 6)
-        log_info("Wrote ", file)
-      }
-
       p_ma <- tryCatch(
-        maPlot(diffMeth, region, comparison = i, rank.cut = diffmeth.rank.cut),
+        maPlot(diffMeth, region,
+          comparison = i,
+          rank.cut = diffmeth.rank.cut, auto.rank.cut = diffmeth.auto.rank.cut
+        ),
         error = function(e) {
           log_warn("MA plot ", region, " / ", tag, ": ", conditionMessage(e))
           NULL

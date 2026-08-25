@@ -126,7 +126,8 @@ lolaVolcanoPlot <- function(lolaRes, outputDir, comparison, region,
   if (!is.null(grp1) && !is.null(grp2)) {
     if (requireNamespace("patchwork", quietly = TRUE)) {
       pp <- patchwork::wrap_plots(
-        directionHeader(grp1, grp2, cell_colors), pp,
+        directionHeader(grp1, grp2, cell_colors),
+        patchwork::wrap_elements(full = pp),
         ncol = 1, heights = c(1, 14)
       )
     } else {
@@ -136,56 +137,88 @@ lolaVolcanoPlot <- function(lolaRes, outputDir, comparison, region,
 
   if (!dir.exists(outputDir)) dir.create(outputDir, recursive = TRUE)
   file <- file.path(outputDir, paste0("lolaVolcanoPlot_", region, "_", label, ".pdf"))
-  pdf(file, width = 7, height = 6)
+  pdf(file, width = 9, height = 5.5)
   print(pp)
   dev.off()
 
   invisible(pp)
 }
 
+#' Strip the JASPAR accession from a LOLA description.
+#' "MA0637.1_CENPB" becomes "CENPB", "MA1128.1_FOSL1::JUN" becomes
+#' "FOSL1::JUN". Same rule the LOLA against methylTFR panel uses.
+.strip_motif_id <- function(x) gsub(".*_", "", x)
+
 #' Volcano panel used by lolaVolcanoPlot.
 #'
+#' Two panels that mirror each other around zero: the loss side runs
+#' outwards to the left on a reversed axis, the gain side outwards to the
+#' right, so the distance from the centre is the enrichment in both. Built
+#' with patchwork rather than facet_wrap because ggplot cannot reverse the
+#' scale of one facet only.
+#'
 #' Points are black and only the labelled motifs carry colour, which is what
-#' keeps a few hundred region sets readable. Loss sits on the negative side
-#' of the axis, gain on the positive one, each in its own facet.
+#' keeps a few hundred region sets readable.
 plotVolcano <- function(df, top_motifs, oddsRatioCol, signifCol,
                         colors = LOLA_COLORS) {
-  df$condition <- factor(df$condition, levels = c("loss", "gain"))
-  top_motifs$condition <- factor(top_motifs$condition, levels = c("loss", "gain"))
+  df$condition <- as.character(df$condition)
+  top_motifs$condition <- as.character(top_motifs$condition)
 
-  df_combined <- dplyr::bind_rows(
-    df %>% dplyr::filter(condition == "loss") %>% dplyr::mutate(log2OR = pmin(log2OR, 0)),
-    df %>% dplyr::filter(condition == "gain") %>% dplyr::mutate(log2OR = pmax(log2OR, 0))
+  # Distance from the centre, so both sides run outwards from zero. The
+  # clamp keeps a loss set with a positive odds ratio (or the reverse) from
+  # crossing into the other panel, as in the original.
+  df$xplot <- ifelse(df$condition == "loss",
+    abs(pmin(df[[oddsRatioCol]], 0)),
+    pmax(df[[oddsRatioCol]], 0)
   )
-  top_motifs_combined <- dplyr::bind_rows(
-    top_motifs %>% dplyr::filter(condition == "loss") %>% dplyr::mutate(log2OR = pmin(log2OR, 0)),
-    top_motifs %>% dplyr::filter(condition == "gain") %>% dplyr::mutate(log2OR = pmax(log2OR, 0))
-  )
+  top_motifs$xplot <- abs(top_motifs[[oddsRatioCol]])
+  df$yplot <- df[[signifCol]]
+  top_motifs$yplot <- top_motifs[[signifCol]]
+  top_motifs$lab <- .strip_motif_id(top_motifs$description)
 
-  ggplot(df_combined) +
-    aes_string(oddsRatioCol, signifCol) +
-    geom_point(colour = "black", size = 1.1) +
-    ggrepel::geom_text_repel(aes(label = description),
-      data = top_motifs_combined,
-      size = 3.2,
-      colour = colors[as.character(top_motifs_combined$condition)],
-      min.segment.length = 0,
-      segment.size = 0.25,
-      segment.alpha = 0.6,
-      seed = 42,
-      box.padding = 0.5,
-      force = 4,
-      max.overlaps = Inf
-    ) +
-    ylab(expression(-log[10] * "(Q-Value)")) +
-    xlab(expression(log[2] * "(Odds-Ratio)")) +
-    theme_classic(base_size = 13) +
+  y_max <- max(df$yplot, na.rm = TRUE) * 1.05
+  x_max <- max(df$xplot, na.rm = TRUE) * 1.05
+
+  panel <- function(cond, reverse) {
+    d <- df[df$condition == cond, ]
+    tm <- top_motifs[top_motifs$condition == cond, ]
+    p <- ggplot(d, aes(x = xplot, y = yplot)) +
+      geom_point(colour = "black", size = 1.1) +
+      ggrepel::geom_text_repel(
+        data = tm, aes(label = lab),
+        size = 3.2, colour = colors[[cond]],
+        min.segment.length = 0, segment.size = 0.25, segment.alpha = 0.6,
+        box.padding = 0.5, force = 4, max.overlaps = Inf, seed = 42
+      ) +
+      ylab(expression(-log[10] * "(Q-Value)")) +
+      xlab(NULL) +
+      theme_classic(base_size = 13) +
+      theme(axis.text = element_text(size = 11), legend.position = "none")
+    p <- p + if (reverse) {
+      scale_x_reverse(limits = c(x_max, 0))
+    } else {
+      scale_x_continuous(limits = c(0, x_max))
+    }
+    p + scale_y_continuous(limits = c(0, y_max))
+  }
+
+  p_loss <- panel("loss", reverse = TRUE)
+  p_gain <- panel("gain", reverse = FALSE) +
     theme(
-      axis.text = element_text(size = 11),
-      legend.position = "none",
-      strip.text = element_blank(),
-      strip.background = element_blank(),
-      panel.spacing = unit(0, "lines")
-    ) +
-    facet_wrap(~condition, scales = "free_x")
+      axis.title.y = element_blank(),
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank(),
+      axis.line.y = element_blank()
+    )
+
+  if (!requireNamespace("patchwork", quietly = TRUE)) {
+    stop("patchwork is required for the mirrored volcano layout")
+  }
+  patchwork::wrap_plots(p_loss, p_gain, nrow = 1) +
+    patchwork::plot_annotation(
+      caption = expression(log[2] * "(Odds-Ratio)"),
+      theme = ggplot2::theme(
+        plot.caption = element_text(hjust = 0.5, size = 12, vjust = 1)
+      )
+    )
 }
