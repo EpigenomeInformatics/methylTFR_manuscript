@@ -74,7 +74,19 @@ lolaVolcanoPlot <- function(lolaRes, outputDir, comparison, region,
       paste(names(lolaRes$region[[comparison]]), collapse = ", ")
     )
   }
-  df <- lolaRes$region[[comparison]][[region]]
+  # LOLA results are data.tables. Their [[ ]] errors with "subscript out of
+  # bounds" where a data.frame returns NULL, and $<- on them copies with a
+  # warning, so the table is converted once here.
+  df <- as.data.frame(lolaRes$region[[comparison]][[region]])
+  needed <- c("userSet", "description", "oddsRatio", "qValue")
+  missing_cols <- setdiff(needed, colnames(df))
+  if (length(missing_cols) > 0) {
+    stop(
+      "Column(s) missing from the LOLA table: ",
+      paste(missing_cols, collapse = ", "), ". Present: ",
+      paste(colnames(df), collapse = ", ")
+    )
+  }
   df <- df[df$userSet %in% userSets, ]
   if (nrow(df) == 0) {
     stop("No rows for userSets ", paste(userSets, collapse = ", "))

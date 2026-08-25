@@ -63,8 +63,25 @@ heatmap.tfs <- c(
 )
 
 # Significance cuts of the LOLA against methylTFR panel, one per assay
-cut.padj.mtfr <- 0.05 # methylTFR adjusted p-value
+cut.padj.mtfr <- 0.05 # methylTFR significance
 cut.qval.lola <- 0.05 # LOLA q-value
+
+# Which methylTFR column that cut applies to. With two donors per group a
+# Welch t-test on four values bottoms out around 1e-4, and BH over ~630
+# motifs multiplies that by up to 630, so the adjusted p-value can be
+# unable to reach 0.05 at all for a given contrast. The script reports the
+# smallest attainable value below. Switch to "p_value" to categorise on the
+# nominal p-value instead, which must then be described as nominal.
+mtfr.signif.col <- "p_value_adjusted"
+
+# Optional effect size floor applied together with the significance cut
+cut.effect.mtfr <- 0
+
+# Paired test blocking on donor. Each donor contributes TN, TCM and TEM, so
+# a paired test removes the donor effect that the unpaired test leaves in
+# the residual. With only two donors it has one degree of freedom, so it is
+# more sensitive when the donors agree and less when they do not.
+diff.paired <- FALSE
 
 # Motifs labelled per direction on the standalone LOLA volcano
 top.label.lola <- 10
@@ -119,6 +136,11 @@ lola.userSets <- c("rankCut_1000_hyper", "rankCut_1000_hypo")
 
 # Region types used for the RnBeads density scatter and MA plots
 diffmeth.regions <- c("tiling1kb", "distal", "sites")
+
+# Differential regions on those two panels come from the RnBeads combined
+# rank, not from the adjusted p-value, which is the same criterion the LOLA
+# enrichment uses through its rankCut_1000_hyper / _hypo user sets.
+diffmeth.rank.cut <- 1000
 
 # Directories
 analysis.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/memoryTcells"
@@ -228,6 +250,37 @@ resolve_lola_region <- function(res_lola, index, preferred) {
   hit[1]
 }
 
+# Paired differential test blocking on donor. differential_deviation_test
+# is unpaired, which for this design leaves the donor effect in the residual
+# even though every donor contributes both subtypes.
+paired_deviation_test <- function(mat, groups, donors, test, ref, padjMethod = "BH") {
+  d_test <- donors[groups == test]
+  d_ref <- donors[groups == ref]
+  common <- intersect(d_test, d_ref)
+  if (length(common) < 2) {
+    stop("Need at least two donors with both ", test, " and ", ref)
+  }
+  m_test <- mat[, which(groups == test)[match(common, d_test)], drop = FALSE]
+  m_ref <- mat[, which(groups == ref)[match(common, d_ref)], drop = FALSE]
+  diffs <- m_test - m_ref
+
+  p_val <- apply(diffs, 1, function(x) {
+    x <- x[is.finite(x)]
+    if (length(x) < 2 || stats::sd(x) == 0) {
+      return(NA_real_)
+    }
+    stats::t.test(x)$p.value
+  })
+  data.frame(
+    motifs = rownames(mat),
+    p_value = p_val,
+    p_value_adjusted = stats::p.adjust(p_val, method = padjMethod),
+    mean_difference = abs(rowMeans(diffs)),
+    row.names = NULL,
+    stringsAsFactors = FALSE
+  )
+}
+
 # Cell type annotation used on top of both halves of the paired heatmap
 cell_type_annotation <- function(cell_types) {
   present <- intersect(names(cell_type_colors), unique(cell_types))
@@ -290,12 +343,22 @@ for (nm in names(comparisons)) {
     ref, " (n = ", sum(groups == ref), ")")
 
   # Groups come from the annotation, not from the column order
-  diff <- differential_deviation_test(
-    deviations_mat[, idx, drop = FALSE],
-    groups = groups,
-    alternative = "two.sided",
-    parametric = TRUE
-  )
+  diff <- if (diff.paired) {
+    log_info(nm, ": paired test blocking on donor")
+    paired_deviation_test(
+      deviations_mat[, idx, drop = FALSE],
+      groups = groups,
+      donors = sample_donors(colnames(dev_obj))[idx],
+      test = test, ref = ref
+    )
+  } else {
+    differential_deviation_test(
+      deviations_mat[, idx, drop = FALSE],
+      groups = groups,
+      alternative = "two.sided",
+      parametric = TRUE
+    )
+  }
 
   saveRDS(diff, file.path(table.dir, paste0("diff_", tolower(nm), "_", motifSet, ".RDS")))
   write.csv(diff,
@@ -310,6 +373,22 @@ for (nm in names(comparisons)) {
 
   diff$zdiff <- zdiff[diff$motifs]
   diff <- diff[order(diff$p_value_adjusted, -diff$mean_difference), ]
+
+  # The smallest adjusted p-value the design can produce. If it exceeds the
+  # cut, no motif can be called differential no matter how strong it is.
+  min_padj <- min(diff$p_value_adjusted, na.rm = TRUE)
+  log_info(nm, ": min raw p = ", signif(min(diff$p_value, na.rm = TRUE), 3),
+    ", min adjusted p = ", signif(min_padj, 3), ", ",
+    sum(diff$p_value_adjusted < cut.padj.mtfr, na.rm = TRUE),
+    " motifs below ", cut.padj.mtfr)
+  if (min_padj > cut.padj.mtfr) {
+    log_warn(
+      nm, ": no motif can reach an adjusted p of ", cut.padj.mtfr,
+      " with ", length(idx), " samples and ", nrow(diff), " tests. ",
+      "The mTFR side of the panel will be empty. Consider ",
+      "mtfr.signif.col = \"p_value\" with an effect floor, or diff.paired = TRUE."
+    )
+  }
 
   results[[nm]] <- diff
 }
@@ -605,7 +684,8 @@ if (!file.exists(lola.file)) {
         TRUE
       },
       error = function(e) {
-        log_warn(nm, " volcano: ", conditionMessage(e))
+        log_warn(nm, " volcano: ", conditionMessage(e),
+          " [call: ", paste(deparse(conditionCall(e)), collapse = " "), "]")
         FALSE
       }
     )
@@ -617,12 +697,17 @@ if (!file.exists(lola.file)) {
   # arrow says which side of the x axis belongs to which.
   plotlog2OR <- function(df, grp1, grp2) {
     df <- df %>%
-      dplyr::mutate(isDiff = dplyr::case_when(
-        p_value_adjusted < cut.padj.mtfr & qValue < cut.qval.lola ~ "Differential in both",
-        p_value_adjusted < cut.padj.mtfr ~ "mTFR differential",
-        qValue < cut.qval.lola ~ "LOLA differential",
-        TRUE ~ "Not differential"
-      ))
+      dplyr::mutate(
+        mtfr_sig = .data[[mtfr.signif.col]] < cut.padj.mtfr &
+          abs(zdiff) >= cut.effect.mtfr,
+        lola_sig = qValue < cut.qval.lola,
+        isDiff = dplyr::case_when(
+          mtfr_sig & lola_sig ~ "Differential in both",
+          mtfr_sig ~ "mTFR differential",
+          lola_sig ~ "LOLA differential",
+          TRUE ~ "Not differential"
+        )
+      )
     df$isDiff <- factor(df$isDiff, levels = names(status_colors))
     log_info(
       "  categories: ",
@@ -720,7 +805,7 @@ if (!file.exists(lola.file)) {
 
   for (nm in names(lola_hits)) {
     hit <- lola_hits[[nm]]
-    lola <- res_lola$region[[hit$index]][[hit$region]]
+    lola <- as.data.frame(res_lola$region[[hit$index]][[hit$region]])
     lola <- lola[lola$userSet %in% lola.userSets, ]
     if (nrow(lola) == 0) {
       log_warn(nm, ": no rows for userSets ", paste(lola.userSets, collapse = ", "))
@@ -783,7 +868,9 @@ if (!dir.exists(diffmeth.dir)) {
       tag <- gsub("[^A-Za-z0-9]+", "_", names(cmps)[i])
 
       p_dens <- tryCatch(
-        rnbeadsDensityScatter(diffMeth, region, comparison = i, p.cut = cut.padj),
+        rnbeadsDensityScatterRankCut(diffMeth, region,
+          comparison = i, rank.cut = diffmeth.rank.cut
+        ),
         error = function(e) {
           log_warn("density scatter ", region, " / ", tag, ": ", conditionMessage(e))
           NULL
@@ -796,7 +883,7 @@ if (!dir.exists(diffmeth.dir)) {
       }
 
       p_ma <- tryCatch(
-        maPlot(diffMeth, region, comparison = i, p.cut = cut.padj),
+        maPlot(diffMeth, region, comparison = i, rank.cut = diffmeth.rank.cut),
         error = function(e) {
           log_warn("MA plot ", region, " / ", tag, ": ", conditionMessage(e))
           NULL
