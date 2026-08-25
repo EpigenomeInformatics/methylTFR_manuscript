@@ -92,3 +92,85 @@ plotVolcano <- function(df, top_motifs, oddsRatioCol, signifCol) {
 
   return(pp)
 }
+lolaVolcanoPlotC19 <- function(cell, lolaDb, outputDir, reg, pValCut = 2, database = "TF_motif_clusters",
+                               signifCol = "qValue", cnames = c("loss", "gain"), n = 3, colorpanel = c()) {
+  if (endsWith(outputDir, ".rds")) {
+    bed.files <- readRDS(outputDir)
+    df <- bed.files$region
+    bed <- names(df)
+    df <- df[[reg]]$distal %>% #Change when promoter or other regions
+
+      dplyr::filter(collection == database) %>%
+      dplyr::filter(userSet %in% c("rankCut_1000_hyper", "rankCut_1000_hypo")) %>%
+      dplyr::mutate(condition = ifelse(userSet == "rankCut_1000_hyper", "gain", "loss"))
+    df <- muRtools:::lolaPrepareDataFrameForPlot(lolaDb, df,
+      scoreCol = "log2OR", signifCol = signifCol,
+      orderCol = "maxRnk", includedCollections = database,
+      pvalCut = pValCut, maxTerms = Inf, perUserSet = FALSE,
+      groupByCollection = TRUE, orderDecreasing = NULL
+    )
+    df$log2OR <- ifelse(df$condition == "loss", -df$log2OR, df$log2OR)
+    df$name <- df$description
+  } else {
+    bed.files <- list.files(paste0(outputDir, cell, "/reports/differential_data"), pattern = "lolaRes", full.names = TRUE)
+    bed.files <- grep(bed.files, pattern = region, value = TRUE)
+    bed.files_l <- grep(pattern = paste0("_cutL2fcPadj05loss.rds"), bed.files, value = TRUE)[n]
+    bed.files_g <- grep(pattern = paste0("_cutL2fcPadj05gain.rds"), bed.files, value = TRUE)[n]
+    bed.files <- c(bed.files_l, bed.files_g)
+    names(bed.files) <- cnames
+    data <- lapply(names(bed.files), function(bed) {
+      a <- readRDS(bed.files[[bed]]) %>%
+        dplyr::filter(collection == database)
+      a <- muRtools:::lolaPrepareDataFrameForPlot(lolaDb, a,
+        scoreCol = "log2OR", signifCol = signifCol,
+        orderCol = "maxRnk", includedCollections = database,
+        pvalCut = pValCut, maxTerms = Inf, perUserSet = FALSE,
+        groupByCollection = TRUE, orderDecreasing = NULL
+      ) %>%
+        dplyr::filter(log2OR >= 0)
+
+      if (!is.null(a)) {
+        a <- a %>%
+          dplyr::mutate(condition = rep(bed, nrow(a)), log2OR = log2(oddsRatio))
+        if (bed == "loss") {
+          a <- a %>%
+            dplyr::mutate(log2OR = -log2OR)
+        }
+      }
+      a
+    })
+    df <- rlist::list.rbind(data)
+    df$name <- gsub("\\s*\\[.*\\]", "", df$name)
+  }
+  if (length(bed.files) == 0) {
+    stop("No files found with the specified pattern.")
+  }
+  if (signifCol == "qValue") {
+    signifCol <- "qValueLog"
+    df$qValueLog <- -log10(df$qValue)
+    df$differential <- ifelse(df$qValueLog > 1.3, "Differential", "Non-differential")
+  }
+
+
+  top_motifs_gain <- df %>%
+    dplyr::filter(differential == "Differential", condition == "gain") %>%
+    arrange(desc(qValueLog)) %>%
+    dplyr::filter(qValueLog > 2) %>%
+    top_n(10, qValueLog)
+
+  top_motifs_loss <- df %>%
+    dplyr::filter(differential == "Differential", condition == "loss") %>%
+    arrange(desc(qValueLog)) %>%
+    dplyr::filter(qValueLog > 2) %>%
+    top_n(10, qValueLog)
+
+  top_motifs <- bind_rows(top_motifs_gain, top_motifs_loss)
+
+  oddsRatioCol <- "log2OR"
+  if (!is.element(oddsRatioCol, colnames(df))) {
+    logger.error("Invalid LOLA result. Could not find a valid column containing odds ratios.")
+  }
+  pp <- plotVolcano(df, top_motifs, oddsRatioCol, signifCol)
+
+  return(list(plot = pp, df = df))
+}

@@ -117,7 +117,7 @@ plot_and_save_difference_covid <- function(samples, save_dir, obs_colors) {
   }
 }
 
-# Define the observed colors for CD4T samples
+# Define the observed colors 
 obs_colors <- c(
   "Observed divided Expected Bcell" = "#980043",
   "Observed divided Expected mono" = "#CD7054",
