@@ -4,7 +4,6 @@
 # 03_pca_stability_blueprint.R
 # created on 21-07-25 by Irem B Gunduz
 # Updated by IBG on 23-08-2026
-# Merged 04_plot_blueprint_pca.R and 05_stability_analysis_rf_pc.R
 # PCA of the mTFR deviations (genome wide and distal restricted),
 # tiling1kb and distal methylation, followed by a Random Forest
 # stability analysis on the same PCs
@@ -28,12 +27,18 @@ set.seed(42)
 # Motif sets whose deviations enter the PCA and the stability analysis
 motifSets <- c("jaspar2020", "jaspar2020_distal")
 
-# PCA is run on the raw matrices, as in the original scripts
+# PCA is run on the raw matrices, without centring or scaling
 pca.center <- FALSE
 pca.scale <- FALSE
 
-# Number of PCs kept for the Random Forest
-var.threshold <- 0.9 # Use PCs explaining 90% of the variance
+# Number of PCs kept for the Random Forest.
+# On uncentred matrices the first component is the mean methylation profile
+# and absorbs almost all of the total sum of squares, so a cumulative
+# variance rule always collapses to a single component that carries no cell
+# type information. A fixed number of components is used instead.
+pc.selection <- "fixed" # "fixed" or "variance"
+n.pc <- 20 # Components kept when pc.selection is "fixed"
+var.threshold <- 0.9 # Cumulative variance when pc.selection is "variance"
 max.pc <- 20 # Cap for the number of PCs
 
 # Random Forest settings
@@ -60,16 +65,22 @@ table.dir <- file.path(github.dir, "tables")
 if (!dir.exists(fig.dir)) dir.create(fig.dir, recursive = TRUE)
 if (!dir.exists(table.dir)) dir.create(table.dir, recursive = TRUE)
 
-# Remap to cleaner group names
+# Accuracy tables, named after the PC selection they were produced with
+pc.tag <- if (pc.selection == "fixed") paste0(n.pc, "pc") else paste0("var", 100 * var.threshold)
+pc.tag_splits <- paste0("rf_classification_accuracy_pc_stratified_splits_", pc.tag, ".csv")
+pc.tag_cv <- paste0("rf_classification_accuracy_pc_5foldcv_", pc.tag, ".csv")
+
+# Display names and palette, identical to 06_differential_heatmap.R so that
+# every Blueprint panel uses the same colour per cell type
 group_remap <- c(
   "Bcell" = "B-cells",
-  "DC" = "DC",
+  "DC" = "Dendritic cells",
   "eryt" = "Erythrocytes",
   "gran" = "Granulocytes",
   "megK" = "Megakaryocytes",
-  "Mf" = "Mf",
+  "Mf" = "Macrophages",
   "mono" = "Monocytes",
-  "NK" = "NK",
+  "NK" = "NK-cells",
   "osteoclast" = "Osteoclast",
   "other" = "Other",
   "plasma" = "Plasma",
@@ -79,21 +90,24 @@ group_remap <- c(
 )
 
 cell_type_colors <- c(
-  "B-cells" = "#1f77b4",
-  "DC" = "#ff7f0e",
-  "Erythrocytes" = "#2ca02c",
-  "Granulocytes" = "#d62728",
-  "Megakaryocytes" = "#9467bd",
-  "Mf" = "#8c564b",
-  "Monocytes" = "#e377c2",
-  "NK" = "#7f7f7f",
-  "Osteoclast" = "#1b9e77",
-  "Other" = "#bcbd22",
-  "Plasma" = "#17becf",
-  "Progenitors" = "#2ca4a2",
-  "T-cells" = "#393b79",
-  "Thymocyte" = "#6a5acd"
+  "B-cells" = "#C2377C",
+  "Dendritic cells" = "#8C6D3F",
+  "Erythrocytes" = "#7E4B2A",
+  "Granulocytes" = "#E8A33D",
+  "Macrophages" = "#B5A38A",
+  "Megakaryocytes" = "#6A3D9A",
+  "Monocytes" = "#C2703D",
+  "NK-cells" = "#2CA02C",
+  "Osteoclast" = "#8C8C8C",
+  "Other" = "#BCBD22",
+  "Plasma" = "#7B1E3D",
+  "Progenitors" = "#17BECF",
+  "T-cells" = "#4FC3D9",
+  "Thymocyte" = "#5B9BD5"
 )
+
+# Fixed legend order, so the key reads the same in every panel
+cell_type_levels <- names(cell_type_colors)
 
 #####################################################################
 # Helper functions
@@ -117,7 +131,8 @@ run_pca <- function(mat, label) {
 
 plot_pca <- function(pca_obj, groups, title, file) {
   # Only the grouping column is passed, ggfortify binds the scores itself
-  plot_data <- data.frame(groups = groups, stringsAsFactors = FALSE)
+  present <- intersect(cell_type_levels, unique(groups))
+  plot_data <- data.frame(groups = factor(groups, levels = present))
   pdf(file, width = 10, height = 10)
   print(
     autoplot(pca_obj,
@@ -127,24 +142,38 @@ plot_pca <- function(pca_obj, groups, title, file) {
       size = 5
     ) +
       theme_classic() +
-      scale_color_manual(values = cell_type_colors) +
+      scale_color_manual(values = cell_type_colors[present], name = "Cell type") +
       theme(legend.position = "bottom")
   )
   dev.off()
   log_info("Wrote ", file)
 }
 
-# Select PCs based on cumulative variance, with a cap
-select_pcs_by_variance <- function(pca_obj, threshold = 0.9, max_pcs = 20) {
-  variances <- pca_obj$sdev^2
-  cum_var_prop <- cumsum(variances) / sum(variances)
+# Number of PCs handed to the Random Forest, capped by the number available
+select_pcs <- function(pca_obj, label) {
+  available <- ncol(pca_obj$x)
 
-  # First component that meets or exceeds the threshold
-  candidates <- which(cum_var_prop >= threshold)
-  n_pcs <- if (length(candidates) > 0) candidates[1] else length(pca_obj$sdev)
+  if (pc.selection == "fixed") {
+    n_pcs <- min(n.pc, available)
+  } else {
+    variances <- pca_obj$sdev^2
+    cum_var_prop <- cumsum(variances) / sum(variances)
+    candidates <- which(cum_var_prop >= var.threshold)
+    n_pcs <- if (length(candidates) > 0) candidates[1] else length(pca_obj$sdev)
+    n_pcs <- min(n_pcs, max.pc, available)
+    if (n_pcs <= 2) {
+      log_warn(
+        label, ": the variance rule selected ", n_pcs, " PC(s). ",
+        "PC1 explains ", round(100 * cum_var_prop[1], 2),
+        "% of the total sum of squares, which is expected on uncentred ",
+        "matrices. Set pc.selection to \"fixed\" for the stability analysis."
+      )
+    }
+  }
 
-  # Cap by max_pcs and by the number of available PCs
-  as.integer(min(n_pcs, max_pcs, ncol(pca_obj$x)))
+  n_pcs <- as.integer(n_pcs)
+  log_info(label, ": using ", n_pcs, " PCs (selection: ", pc.selection, ")")
+  n_pcs
 }
 
 # Return the first n PCs as a features x samples matrix
@@ -270,7 +299,7 @@ tiling <- meth(rnbeads, type = "tiling1kb")
 # Every matrix that goes into the PCA and the Random Forest
 mats <- c(dev_mats, list(Distal = distal, Tiling1kb = tiling))
 
-# Healthy samples that carry a cell type we can map, NAs are dropped here
+# Healthy samples carrying a mappable cell type, NAs are dropped here
 ann_ok <- !is.na(sannot$DISEASE) & sannot$DISEASE == "None" &
   sannot$cellTypeGroup %in% names(group_remap)
 healthy <- sannot$bedFile[which(ann_ok)]
@@ -307,11 +336,7 @@ for (nm in names(pca_list)) {
 # Stability analysis with Random Forests on the PCs
 #####################################################################
 
-n_pcs <- vapply(names(pca_list), function(nm) {
-  n <- select_pcs_by_variance(pca_list[[nm]], var.threshold, max_pcs = max.pc)
-  log_info(nm, ": using ", n, " PCs (variance threshold ", var.threshold, ", max ", max.pc, ")")
-  n
-}, integer(1))
+n_pcs <- vapply(names(pca_list), function(nm) select_pcs(pca_list[[nm]], nm), integer(1))
 
 pcs <- lapply(names(pca_list), function(nm) get_pc_matrix(pca_list[[nm]], n_pcs[[nm]]))
 names(pcs) <- names(pca_list)
@@ -333,7 +358,7 @@ results_splits <- data.frame(
   row.names = NULL
 )
 write.csv(results_splits,
-  file = file.path(table.dir, "rf_classification_accuracy_pc_stratified_splits_var90.csv"),
+  file = file.path(table.dir, pc.tag_splits),
   row.names = FALSE
 )
 
@@ -353,7 +378,7 @@ results_cv <- data.frame(
   row.names = NULL
 )
 write.csv(results_cv,
-  file = file.path(table.dir, "rf_classification_accuracy_pc_5foldcv_var90.csv"),
+  file = file.path(table.dir, pc.tag_cv),
   row.names = FALSE
 )
 

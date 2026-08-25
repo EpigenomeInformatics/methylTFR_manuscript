@@ -57,10 +57,7 @@ gc_dist      <- getGenomeGC()
 ```
 
 The distal restriction uses Ensembl Regulatory Build v104, filtered to hg38 and
-to distal elements, and is read from
-`methylTFRAnnotationHg38_old/inst/extdata/distal_regions.RDS`. This is the
-region set the `jaspar2020_distal` GC frequency tables were built against, and
-the analyses require the same one.
+to distal elements.
 
 ---
 
@@ -74,6 +71,7 @@ src/
   blueprint/       BLUEPRINT bulk WGBS
   memtcells/       CD4+ T memory cell subtypes
   echo/            ECHO single cell WGBS with matched scATAC-seq
+data/              bias-corrected deviations, one folder per dataset
 tables/            sample annotation and analysis tables
 figures/           figure panels
 mtfr.yaml          conda environment
@@ -100,9 +98,6 @@ identify a processing run and appear in the output directory names.
 | `07_rna_mofa_prep.R` | RNA counts matrix and the WGBS to RNA sample map |
 | `08_bp_mofa.R` | MOFA2 integration of deviations and expression, factor and modality figures, paired heatmaps |
 
-Cancer samples are identified through the `DISEASE` column of the sample
-annotation, which leaves 147 of 157 samples. Cell type groups are recorded in
-`cellTypeGroup` and mapped to display names within each script.
 
 ## CD4+ T memory cells
 
@@ -117,19 +112,6 @@ annotation, which leaves 147 of 157 samples. Cell type groups are recorded in
 | `05_EO_mFoots_memTcells.R` | expected and observed footprint curves |
 | `06_differential_TFs.R` | differential deviations against naive, paired activity and expression heatmap, LOLA enrichment and its comparison with methylTFR, differential methylation panels |
 
-TEMRA is a single unreplicated sample and is excluded from the group
-comparisons.
-
-With two donors per group the differential test is limited: for TEM against TN
-145 motifs reach an adjusted p-value below 0.05, while for TCM against TN the
-smallest attainable adjusted p-value is 0.095. `06_differential_TFs.R` reports
-the smallest raw and adjusted p-value of each contrast, and exposes the
-significance column, an effect size floor and a paired test as settings.
-
-Differential regions in the methylation panels are defined by the RnBeads
-combined rank, chosen per comparison with `auto.select.rank.cut()`. This matches
-the `rankCut` user sets of the LOLA enrichment, so both describe the same
-regions.
 
 ## ECHO
 
@@ -149,26 +131,53 @@ Both footprint scripts use subtraction, so the methylation and accessibility
 panels are on the same scale. The transcription factors shown are taken from the
 ECHO MOFA factor table.
 
-Single cell coverage is sparse relative to the distal regions, and a cell that
-does not cover every GC bin inside them cannot be scored. `04_mtfr_scECHO.R`
-therefore runs a coverage check first, writes the per cell result to
-`cell_gcbin_qc.tsv` and excludes the cells that fall short.
-
 ---
 
 ## Bias-corrected deviations
 
-The deviations are provided as `methylTFRdeviations` objects in RDS files.
+`data/` holds the deviations as `methylTFRdeviations` objects, one RDS per
+dataset and motif set, under `data/<dataset>/<motifSet>_deviations.RDS`.
 
-- [The BLUEPRINT project](#)
-- [CD4+ T memory cells](#)
+| Dataset | Motif set | File |
+|---|---|---|
+| CD4+ T memory cells | `jaspar2020` | [`jaspar2020_deviations.RDS`](data/memtcells/jaspar2020_deviations.RDS) |
+| CD4+ T memory cells | `jaspar2020_distal` | [`jaspar2020_distal_deviations.RDS`](data/memtcells/jaspar2020_distal_deviations.RDS) |
+
+The BLUEPRINT and ECHO deviations follow the same layout and are added as they
+are released.
+
+### Downloading
+
+Each link above opens the file on GitHub, where **Download raw file** saves it.
+The whole set comes with the repository:
+
+```bash
+git clone https://github.com/EpigenomeInformatics/methylTFR_manuscript.git
+```
+
+A single object can also be read straight into R without cloning:
 
 ```r
 library(methylTFR)
-dev <- readRDS("jaspar2020_distal_deviations.RDS")
-deviations(dev)        # bias-corrected deviations
-deviationZScores(dev)  # row-wise Z-scores
+
+base <- "https://raw.githubusercontent.com/EpigenomeInformatics/methylTFR_manuscript/HEAD/data"
+dev <- readRDS(gzcon(url(file.path(base, "memtcells", "jaspar2020_distal_deviations.RDS"), "rb")))
 ```
+
+### Using them
+
+```r
+dev <- readRDS("data/memtcells/jaspar2020_distal_deviations.RDS")
+
+deviations(dev)        # bias-corrected deviations, motifs x samples
+deviationZScores(dev)  # row-wise Z-scores
+colData(dev)           # sample annotation
+rownames(dev)          # motif identifiers
+```
+
+The objects extend `SummarizedExperiment`, so the usual accessors and
+subsetting apply. Loading them is enough to reproduce every downstream figure
+of a dataset, which is to say every script after `02`.
 
 ---
 
@@ -179,6 +188,9 @@ deviationZScores(dev)  # row-wise Z-scores
    the scripts of interest.
 3. Run the scripts of that dataset in numerical order. Steps whose output
    already exists are skipped, so a rerun only fills in what is missing.
+
+To go straight to the analysis, point `dev.tag` at a directory holding the
+files from `data/` and start at `03`.
 
 Figures are written alongside the analysis outputs under `analysis.dir`. Tables
 reported in the manuscript are written to `tables/`.
