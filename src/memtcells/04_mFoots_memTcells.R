@@ -17,8 +17,12 @@ suppressPackageStartupMessages({
   library(RnBeads)
   library(methylTFR)
   library(methylTFRAnnotationHg38)
+  library(SummarizedExperiment)
 })
 set.seed(42)
+
+src.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/src"
+source(file.path(src.dir, "utils.R"))
 
 #####################################################################
 # Settings
@@ -36,15 +40,14 @@ drop.cell.types <- "TEMRA"
 # Legend order of the subtypes
 group_order <- c("TN", "TCM", "TEM")
 
-# Both spellings are listed because the cellType column of the sample
-# annotation and the cleaned RNA sample names disagree on the T prefix
+# Green scheme from utils.R, shared with every figure that splits by
+# subtype. Both spellings are listed because the cellType column of the
+# sample annotation and the cleaned RNA sample names disagree on the
+# T prefix.
 base_colors <- c(
-  "TN" = "#C8E0B4",
-  "TCM" = "#4492C6",
-  "CM" = "#4492C6",
-  "TEM" = "#43B6C4",
-  "EM" = "#43B6C4",
-  "TEMRA" = "#898FB5"
+  CELL_TYPE_COLORS,
+  "CM" = unname(CELL_TYPE_COLORS[["TCM"]]),
+  "EM" = unname(CELL_TYPE_COLORS[["TEM"]])
 )
 
 # Distal regulatory regions, kept outside the annotation package
@@ -53,6 +56,10 @@ distal.file <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFRAnnot
 # Directories
 analysis.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/memoryTcells"
 rnb.set.path <- file.path(analysis.dir, "reports", "data_import_data", "rnb.set_preprocessed")
+
+# Deviations from 02, averaged per subtype and shown in the legend
+dev.tag <- "mTFR_devs_230826"
+dev.file <- file.path(analysis.dir, dev.tag, paste0(motifSet, "_deviations.RDS"))
 
 # Cache of the merged per cell type methylation, shared with 05
 cache.dir <- file.path(analysis.dir, "debug")
@@ -91,6 +98,69 @@ ensure_msites_cols <- function(gr, label) {
     }
   }
   gr
+}
+
+# One deviation matrix per subtype, taken from the cellType column of the
+# deviations object. NULL when 02 has not been run, in which case the
+# legend falls back to the plain subtype names.
+load_cell_type_deviations <- function(file) {
+  if (!file.exists(file)) {
+    log_warn("No deviations at ", file, ", the legend will omit them")
+    return(NULL)
+  }
+  log_info("Loading deviations from ", file)
+  obj <- readRDS(file)
+
+  cd <- as.data.frame(colData(obj), stringsAsFactors = FALSE)
+  if (!"cellType" %in% colnames(cd)) {
+    log_warn(
+      "The deviations object carries no cellType column. Available: ",
+      paste(colnames(cd), collapse = ", ")
+    )
+    return(NULL)
+  }
+
+  cell_types <- as.character(cd$cellType)
+  mat <- deviations(obj)
+  out <- lapply(split(seq_along(cell_types), cell_types), function(idx) {
+    mat[, idx, drop = FALSE]
+  })
+  log_info(
+    "Deviations for: ",
+    paste(names(out), lengths(lapply(out, colnames)), sep = " n=", collapse = ", ")
+  )
+  out
+}
+
+# Mean deviation of a motif within a subtype. Matching is exact first, then
+# as a fixed substring, because motif names such as JUN(var.2) would
+# otherwise be read as a regular expression.
+motif_mean_deviations <- function(motif, dev_list, groups) {
+  vapply(groups, function(g) {
+    mat <- dev_list[[g]]
+    if (is.null(mat)) {
+      return(NA_real_)
+    }
+    idx <- which(rownames(mat) == motif)
+    if (length(idx) == 0) idx <- grep(motif, rownames(mat), fixed = TRUE)
+    if (length(idx) == 0) {
+      return(NA_real_)
+    }
+    if (length(idx) > 1) {
+      log_warn(motif, ": ", length(idx), " matching rows in ", g, ", using the first")
+      idx <- idx[1]
+    }
+    vals <- mat[idx, ]
+    if (all(is.na(vals))) NA_real_ else mean(vals, na.rm = TRUE)
+  }, numeric(1))
+}
+
+# Legend label, "TN: 1.29" when a score is available
+make_label <- function(group, dev_val) {
+  if (is.na(dev_val)) {
+    return(group)
+  }
+  paste0(group, ": ", format(round(dev_val, 2), nsmall = 2))
 }
 
 #####################################################################
@@ -156,13 +226,21 @@ if (motifSet == "jaspar2020_distal") {
 # Plot the observed minus expected footprints
 #####################################################################
 
-plot_and_save_difference <- function(samples, save_dir) {
+plot_and_save_difference <- function(samples, save_dir, dev_list) {
   for (motif in names(tf_bindsites)) {
     out.file <- file.path(save_dir, paste0("TF_footprint_diff_", motif, ".pdf"))
     if (file.exists(out.file)) next
 
     log_info("Processing motif ", motif, " for ", length(samples), " subtypes")
-    labels <- setNames(paste("Observed minus Expected", names(samples)), names(samples))
+
+    mean_devs <- if (is.null(dev_list)) {
+      setNames(rep(NA_real_, length(samples)), names(samples))
+    } else {
+      motif_mean_deviations(motif, dev_list, names(samples))
+    }
+    labels <- vapply(
+      names(samples), function(g) make_label(g, mean_devs[[g]]), character(1)
+    )
 
     per_group <- lapply(names(samples), function(cell_type) {
       plot_data <- tryCatch(
@@ -221,7 +299,7 @@ plot_and_save_difference <- function(samples, save_dir) {
       ylab("Methylation difference (Observed - Expected)") +
       theme_classic() +
       ggtitle(paste("TF footprint difference for", motif)) +
-      scale_color_manual(values = dynamic_colors) +
+      scale_color_manual(values = dynamic_colors, name = NULL) +
       theme(legend.position = "bottom") +
       xlim(-200, 200)
 
@@ -230,5 +308,7 @@ plot_and_save_difference <- function(samples, save_dir) {
   }
 }
 
-plot_and_save_difference(msites, plot.dir)
+dev_list <- load_cell_type_deviations(dev.file)
+
+plot_and_save_difference(msites, plot.dir, dev_list)
 log_success("Finished the observed minus expected footprints")

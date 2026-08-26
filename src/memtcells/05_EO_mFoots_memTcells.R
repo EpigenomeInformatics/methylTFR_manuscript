@@ -24,6 +24,9 @@ suppressPackageStartupMessages({
 })
 set.seed(42)
 
+src.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/src"
+source(file.path(src.dir, "utils.R"))
+
 #####################################################################
 # Settings
 #####################################################################
@@ -37,18 +40,21 @@ drop.cell.types <- "TEMRA"
 # Legend order of the subtypes
 group_order <- c("TN", "TCM", "TEM")
 
-# Observed uses the saturated subtype colour (matching 04), Expected uses
-# a lighter tint of the same colour
-base_colors <- c(
-  "Expected_TN" = "#E4F0D8",
-  "Observed_TN" = "#C8E0B4",
-  "Expected_TCM" = "#A9C9E3",
-  "Observed_TCM" = "#4492C6",
-  "Expected_TEM" = "#A6DBE2",
-  "Observed_TEM" = "#43B6C4",
-  "Expected_TEMRA" = "#C7CADF",
-  "Observed_TEMRA" = "#898FB5"
-)
+# Observed uses the subtype colour from utils.R, matching 04. Expected
+# uses a lighter tint of the same hue, mixed halfway towards white so the
+# pairing survives a change to CELL_TYPE_COLORS.
+tint <- function(hex, amount = 0.55) {
+  rgb_vals <- grDevices::col2rgb(hex)[, 1]
+  mixed <- rgb_vals + (255 - rgb_vals) * amount
+  grDevices::rgb(mixed[1], mixed[2], mixed[3], maxColorValue = 255)
+}
+
+base_colors <- unlist(lapply(names(CELL_TYPE_COLORS), function(ct) {
+  setNames(
+    c(tint(CELL_TYPE_COLORS[[ct]]), unname(CELL_TYPE_COLORS[[ct]])),
+    paste0(c("Expected_", "Observed_"), ct)
+  )
+}))
 
 # Distal regulatory regions, kept outside the annotation package
 distal.file <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFRAnnotationHg38_old/inst/extdata/distal_regions.RDS"
