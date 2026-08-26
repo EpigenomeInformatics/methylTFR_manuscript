@@ -144,9 +144,9 @@ dataset and motif set, under `data/<dataset>/<motifSet>_deviations.RDS`.
 |---|---|---|
 | CD4+ T memory cells | `jaspar2020` | [`jaspar2020_deviations.RDS`](data/memtcells/jaspar2020_deviations.RDS) |
 | CD4+ T memory cells | `jaspar2020_distal` | [`jaspar2020_distal_deviations.RDS`](data/memtcells/jaspar2020_distal_deviations.RDS) |
+| BLUEPRINT | `jaspar2020` | [`jaspar2020_deviations.RDS`](data/blueprint/jaspar2020_deviations.RDS) |
+| BLUEPRINT | `jaspar2020_distal` | [`jaspar2020_distal_deviations.RDS`](data/blueprint/jaspar2020_distal_deviations.RDS) |
 
-The BLUEPRINT and ECHO deviations follow the same layout and are added as they
-are released.
 
 ### Downloading
 
