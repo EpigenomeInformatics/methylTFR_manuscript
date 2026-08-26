@@ -129,9 +129,7 @@ identify a processing run and appear in the output directory names.
 | `02_echo_cell_pseudobulks.R` | cell type pseudobulks from the methylation data |
 | `03_mfoot_meth.R` | observed minus expected methylation footprints |
 | `03_mfoot_atac.R` | chromatin accessibility footprints for the same factors |
-| `04_mtfr_scECHO.R` | methylTFR on the single cell allc files of the samples overlapping the ATAC data |
-| `05_plot.R` | paired methylTFR and chromVAR heatmap, correlation by methyl-SELEX call, per factor activity scatters |
-| `debug_sc_mtfr.R` | diagnostic that runs the pipeline serially on a single allc file |
+| `04_plot.R` | paired methylTFR and chromVAR heatmap, correlation by methyl-SELEX call, per factor activity scatters |
 
 ---
 
