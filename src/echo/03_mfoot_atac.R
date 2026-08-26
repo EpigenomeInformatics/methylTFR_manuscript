@@ -14,6 +14,7 @@ suppressPackageStartupMessages({
   library(GenomicRanges)
   library(BSgenome.Hsapiens.UCSC.hg38)
 })
+
 cell_type_colors <- c(
   "B-cell" = "#AE017E",
   "Monocyte" = "#CC4C02",

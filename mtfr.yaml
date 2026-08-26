@@ -38,3 +38,10 @@ dependencies:
 #  - bioconductor-minfi # RnBeads depends on this package
 #  - bioconductor-methylumi # RnBeads depends on this package
 # - bioconductor-rnbeads # May cause conflicts; you may need to install this package separately using BiocManager::install("RnBeads")
+  # --- Added for ArchR --- Run after RnBeads installation
+#  - r-seurat
+#  - r-igraph
+#  - bioconductor-chromvar
+#  - bioconductor-motifmatchr
+#  - bioconductor-tfbstools
+#  - bioconductor-cner
