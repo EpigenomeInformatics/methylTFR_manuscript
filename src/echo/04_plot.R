@@ -1,7 +1,7 @@
 #!/usr/bin/env Rscript
 
 #####################################################################
-# 05_plot.R
+# 04_plot.R
 # created on 25-08-2026 by Irem B Gunduz
 # The ECHO integration panels that 01 to 04 do not already produce:
 #   - the paired methylTFR / chromVAR heatmap with the row-wise
