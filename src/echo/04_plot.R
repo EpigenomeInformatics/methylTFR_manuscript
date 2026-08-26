@@ -24,6 +24,8 @@ suppressPackageStartupMessages({
   library(circlize)
   library(RColorBrewer)
   library(ComplexHeatmap)
+  library(patchwork)
+  library(scales)
   library(logger)
 })
 set.seed(12)
@@ -46,7 +48,16 @@ tfs.per.factor <- 6
 factors.keep <- c("Factor1", "Factor2", "Factor3", "Factor4", "Factor7")
 
 # TFs shown as individual scatters
-scatter.tfs <- c("SPIB", "POU2F3", "ZNF652", "FOXL1")
+scatter.tfs <- c("BATF", "FOXL1", "SPIB", "POU2F3")
+
+# Modality contribution and factor R2, written by 01. Panel A is redrawn
+# from these rather than recomputed, because the fraction needs the full
+# weight matrix and the factor table holds only the top features.
+contrib.file <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/tables/echo_mofa_modality_contribution.csv"
+r2.file <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/tables/echo_mofa_factor_celltype_R2.csv"
+
+# View colours, matching 01
+view_colors <- c("chromVAR" = "#8FA8D4", "methylTFR" = "#E4675C")
 
 selex.file <- "/icbb/projects/igunduz/exposure_atlas_manuscript/sample_annots/Selex_data.csv"
 selex.groups <- c("MethylMinus", "MethylPlus")
@@ -164,6 +175,63 @@ if (length(common_tfs) < 2) stop("Fewer than two MOFA features are in both matri
 log_info(length(common_tfs), " features on the heatmap")
 
 #####################################################################
+# Panel A, modality contribution with the cell type R2 over it
+#####################################################################
+
+p_modality <- NULL
+if (!file.exists(contrib.file) || !file.exists(r2.file)) {
+  log_warn("Modality contribution tables not found, run 01 first. Panel A is skipped")
+} else {
+  agg <- read.csv(contrib.file, stringsAsFactors = FALSE)
+  r2_tab <- read.csv(r2.file, stringsAsFactors = FALSE)
+
+  # Factors ordered by the variance cell type explains, so the R2 line
+  # falls from left to right
+  factor_order <- r2_tab$Factor[order(-r2_tab$R2)]
+  factor_order <- factor_order[factor_order %in% unique(agg$factor)]
+  if (length(factor_order) == 0) {
+    log_warn("The two tables share no factor, Panel A is skipped")
+  } else {
+    agg <- agg[agg$factor %in% factor_order, ]
+    agg$factor <- factor(agg$factor, levels = factor_order)
+
+    unmapped_views <- setdiff(unique(agg$view), names(view_colors))
+    if (length(unmapped_views) > 0) {
+      stop("No colour for view(s): ", paste(unmapped_views, collapse = ", "))
+    }
+    agg$view <- factor(agg$view, levels = names(view_colors))
+
+    r2_line <- r2_tab[r2_tab$Factor %in% factor_order, ]
+    r2_line$Factor <- factor(r2_line$Factor, levels = factor_order)
+
+    p_modality <- ggplot(agg, aes(x = factor, y = frac)) +
+      geom_bar(aes(fill = view), stat = "identity", width = 0.7) +
+      geom_text(
+        aes(group = view, label = ifelse(frac > 0.03, paste0(round(frac * 100, 1), "%"), "")),
+        position = position_stack(vjust = 0.5), size = 3
+      ) +
+      geom_line(data = r2_line, aes(x = Factor, y = R2, group = 1, colour = "Variance Explained (R2)")) +
+      geom_point(data = r2_line, aes(x = Factor, y = R2, colour = "Variance Explained (R2)")) +
+      scale_colour_manual(values = c("Variance Explained (R2)" = "purple"), name = NULL) +
+      scale_y_continuous(
+        labels = percent_format(accuracy = 1),
+        sec.axis = sec_axis(~., name = expression(Variance ~ Explained ~ (R^2)))
+      ) +
+      scale_fill_manual(values = view_colors) +
+      labs(x = "Factor", y = "Relative contribution (|weights| fraction)", fill = "View") +
+      theme_classic(base_size = 12) +
+      theme(
+        legend.position = "bottom",
+        axis.title.y.right = element_text(colour = "purple")
+      )
+
+    file <- file.path(plot.dir, "modality_contribution_fraction_R2.pdf")
+    ggsave(file, p_modality, width = 8, height = 4.5)
+    log_info("Wrote ", file)
+  }
+}
+
+#####################################################################
 # Paired heatmap, methylTFR left, chromVAR right
 #####################################################################
 
@@ -235,11 +303,17 @@ ha_right <- rowAnnotation(
   width = unit(28, "mm")
 )
 
+# Captured once as a grob, so the same drawing serves the standalone PDF
+# and the assembled figure below
+ht_grob <- grid.grabExpr(
+  draw(ht_mtfr + ht_chromvar + ha_right,
+    merge_legend = TRUE, heatmap_legend_side = "right"
+  )
+)
+
 file <- file.path(plot.dir, "paired_heatmap_mtfr_chromvar.pdf")
 pdf(file, width = 14, height = 10)
-draw(ht_mtfr + ht_chromvar + ha_right,
-  merge_legend = TRUE, heatmap_legend_side = "right"
-)
+grid.draw(ht_grob)
 dev.off()
 log_info("Wrote ", file)
 
@@ -264,7 +338,7 @@ plot_tf_scatter <- function(tf) {
     scale_color_manual(values = cell_type_colors, name = "Cell type") +
     annotate("text",
       x = Inf, y = Inf, hjust = 1.05, vjust = 1.4, size = 4,
-      label = paste0("Cor. Coef.: ", round(cor_val, 1))
+      label = paste0("Cor. Coef.: ", format(round(cor_val, 2), nsmall = 2))
     ) +
     labs(title = tf, x = "chromVar", y = "methylTFR") +
     theme_classic(base_size = 13) +
@@ -295,6 +369,7 @@ if (length(available_tfs) > 1 && requireNamespace("patchwork", quietly = TRUE)) 
 # Correlation by methyl-SELEX call, over every shared TF
 #####################################################################
 
+p_selex <- NULL
 if (!file.exists(selex.file)) {
   log_warn("SELEX table not found, skipping that panel: ", selex.file)
 } else {
@@ -365,6 +440,23 @@ if (!file.exists(selex.file)) {
       )
     }
   }
+}
+
+#####################################################################
+# The assembled figure: contribution and SELEX over the paired heatmap
+#####################################################################
+
+if (is.null(p_modality) || is.null(p_selex)) {
+  log_warn("Panel A or the SELEX panel is missing, the combined figure is skipped")
+} else {
+  top_row <- p_modality + p_selex + plot_layout(widths = c(2, 1))
+  combined <- (top_row / wrap_elements(full = ht_grob)) +
+    plot_layout(heights = c(1, 1.7)) +
+    plot_annotation(tag_levels = "A")
+
+  file <- file.path(plot.dir, "figure_echo_integration.pdf")
+  ggsave(file, combined, width = 16, height = 16, limitsize = FALSE)
+  log_info("Wrote ", file)
 }
 
 log_success("Finished the ECHO integration panels, figures in ", plot.dir)

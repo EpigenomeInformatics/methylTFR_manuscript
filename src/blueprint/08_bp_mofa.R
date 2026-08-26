@@ -23,6 +23,7 @@ suppressPackageStartupMessages({
   library(ComplexHeatmap)
   library(logger)
   library(MOFA2)
+  library(reticulate)
   library(methylTFR)
 })
 set.seed(12)
@@ -31,6 +32,7 @@ set.seed(12)
 # Settings
 #####################################################################
 
+use_python(Sys.which("python"), required = TRUE)
 motifSet <- "jaspar2020_distal"
 
 # Cell type groups excluded from the figures. Only the "other" catch all
@@ -204,7 +206,7 @@ if (file.exists(model.rds)) {
   log_info("Loading the trained model from ", model.rds)
   MOFAobject.trained <- readRDS(model.rds)
 } else {
-  MOFAobject.trained <- run_mofa(MOFAobject, model.hdf5, use_basilisk = TRUE)
+  MOFAobject.trained <- run_mofa(MOFAobject, model.hdf5, use_basilisk = FALSE)
   saveRDS(MOFAobject.trained, model.rds)
   log_success("Wrote ", model.rds)
 }
@@ -234,17 +236,32 @@ if (any(is.na(factors_long$celltype))) {
   stop("Some factor rows could not be matched to a cell type")
 }
 
-r2_df <- factors_long %>%
-  group_by(factor) %>%
-  summarise(
-    R2 = {
-      ss <- summary(aov(value ~ celltype, data = cur_data_all()))[[1]]
-      ss["celltype", "Sum Sq"] / (ss["celltype", "Sum Sq"] + ss["Residuals", "Sum Sq"])
-    },
-    .groups = "drop"
-  ) %>%
-  rename(Factor = factor) %>%
-  arrange(desc(R2))
+# Fraction of the variance in a factor that cell type accounts for.
+# Computed one factor at a time in base R: rename() is masked by
+# S4Vectors once MOFA2 is attached, and cur_data_all() is deprecated.
+factor_r2 <- function(df) {
+  if (length(unique(df$celltype)) < 2) {
+    return(NA_real_)
+  }
+  ss <- summary(aov(value ~ celltype, data = df))[[1]]
+  ss["celltype", "Sum Sq"] / (ss["celltype", "Sum Sq"] + ss["Residuals", "Sum Sq"])
+}
+
+factor_split <- split(factors_long, as.character(factors_long$factor))
+
+r2_df <- data.frame(
+  Factor = names(factor_split),
+  R2 = vapply(factor_split, factor_r2, numeric(1)),
+  stringsAsFactors = FALSE,
+  row.names = NULL
+)
+
+if (all(is.na(r2_df$R2))) {
+  stop("No factor could be tested against cell type, only one group is present")
+}
+
+# Decreasing R2, with any untestable factor last
+r2_df <- r2_df[order(-r2_df$R2), ]
 
 if (drop.factor1) {
   r2_df <- r2_df[r2_df$Factor != "Factor1", ]

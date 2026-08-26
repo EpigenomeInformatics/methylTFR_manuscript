@@ -8,6 +8,8 @@
 
 suppressPackageStartupMessages({
   library(MOFA2)
+  library(reticulate)
+  library(ggplot2)
   library(dplyr)
   library(tidyr)
   library(viridis)
@@ -17,6 +19,12 @@ suppressPackageStartupMessages({
   library(scales)
 })
 set.seed(12)
+use_python(Sys.which("python"), required = TRUE)
+
+# View display names and colours, matching the manuscript figure. The
+# object names the views chromVar and mtfr; the legend spells them out.
+view_labels <- c("chromVar" = "chromVAR", "mtfr" = "methylTFR")
+view_colors <- c("chromVAR" = "#8FA8D4", "methylTFR" = "#E4675C")
 
 # Define custom colors for cell types
 cell_type_colors <- c(
@@ -30,11 +38,16 @@ cell_type_colors <- c(
 )
 
 
-# Paths
-plot_dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/figures/echo/mofa_integration/"
-r_objects_dir <- "/icbb/projects/nitschre/methylTFR/r_objects/"
+# Paths. The model and the intermediate tables are written under the
+# analysis directory, which is writable, rather than into a shared
+# project folder.
+analysis_dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/echo"
+plot_dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/figures/echo/mofa_integration"
+r_objects_dir <- file.path(analysis_dir, "mofa_230826")
+table_dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/tables"
 dir.create(plot_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(r_objects_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(table_dir, recursive = TRUE, showWarnings = FALSE)
 
 # Load pseudobulk TF activity matrices
 chromVar <- readRDS(gzfile("/icbb/projects/nitschre/methylTFR/scripts/other/cvar_zscores_adj_psuedobulk.R"))
@@ -67,15 +80,21 @@ outfile <- file.path(r_objects_dir, "model.hdf5")
 if (file.exists(outfile)) {
   MOFAobject.trained <- load_model(outfile)
 } else {
-  MOFAobject.trained <- run_mofa(MOFAobject, outfile, use_basilisk = TRUE)
+  MOFAobject.trained <- run_mofa(MOFAobject, outfile, use_basilisk = FALSE)
 }
 
 # Save trained object in rds
 saveRDS(MOFAobject.trained, file.path(plot_dir, "MOFAobject_trained.rds"))
 
-# Extract factors and compute ANOVA R2 for celltype
+# Extract factors and compute ANOVA R2 for celltype.
+# get_factors returns one row per sample AND factor, so the cell type is
+# joined on the sample rather than assigned as a per-sample vector.
 factors_long <- get_factors(MOFAobject.trained, as.data.frame = TRUE)
-factors_long$celltype <- metadata$celltype
+factors_long$sample <- as.character(factors_long$sample)
+factors_long <- left_join(factors_long, metadata, by = "sample")
+if (any(is.na(factors_long$celltype))) {
+  stop("Some factor rows could not be matched to a cell type")
+}
 
 r2_df <- data.frame(Factor = character(), R2 = numeric(), stringsAsFactors = FALSE)
 
@@ -110,9 +129,9 @@ if (!(f_x %in% colnames(factors_wide)) | !(f_y %in% colnames(factors_wide))) {
   f_y <- available_factors[2]
 }
 
-p_factors_scatter <- ggplot(factors_wide, aes_string(x = f_x, y = f_y, color = "celltype")) +
+p_factors_scatter <- ggplot(factors_wide, aes(x = .data[[f_x]], y = .data[[f_y]], color = celltype)) +
   geom_point(alpha = 0.9, size = 2) +
-  stat_ellipse(aes(group = celltype), linetype = 2, alpha = 0.5, size = 0.4) +
+  stat_ellipse(aes(group = celltype), linetype = 2, alpha = 0.5, linewidth = 0.4) +
   scale_color_manual(values = cell_type_colors) + # Use custom colors
   labs(
     x = paste0("Factor ", f_x), y = paste0("Factor ", f_y),
@@ -128,36 +147,29 @@ ggsave(
 
 # Variance explained per view × factor (from MOFA)
 ve <- get_variance_explained(MOFAobject.trained)
-# Convert to long table (robust for MOFA2 output)
+# r2_per_factor is factors in the rows and views in the columns, which is
+# also how the second variance panel further down reads it
 r2_mat <- as.data.frame(ve$r2_per_factor[[1]])
-r2_mat$view <- rownames(r2_mat)
-r2_long <- r2_mat %>% pivot_longer(cols = -view, names_to = "factor", values_to = "r2")
+r2_mat$factor <- rownames(r2_mat)
+r2_long <- r2_mat %>% pivot_longer(cols = -factor, names_to = "view", values_to = "r2")
 
-# Keep only top factors (from R2 ranking)
 top_factors <- head(r2_df$Factor, 5)
-r2_long <- r2_long %>% filter(view %in% top_factors)
-r2_long$factor <- factor(r2_long$view, levels = top_factors)
+r2_long <- r2_long %>% filter(factor %in% top_factors)
+if (nrow(r2_long) == 0) {
+  stop(
+    "No variance explained rows left. Factors in the model: ",
+    paste(utils::head(rownames(r2_mat), 5), collapse = ", "),
+    "; requested: ", paste(top_factors, collapse = ", ")
+  )
+}
+r2_long$factor <- factor(r2_long$factor, levels = top_factors)
 
-# Plot
-pvar <- ggplot(r2_long, aes(x = factor, y = r2, fill = view)) +
-  geom_bar(stat = "identity", position = "stack") +
-  scale_y_continuous(labels = percent_format(accuracy = 1)) +
-  scale_fill_viridis_d(option = "C") +
-  labs(
-    x = "Factor", y = "Variance explained (R²)", fill = "View",
-    title = "Variance explained per factor by view (top factors)"
-  ) +
-  theme_classic(base_size = 12)
-
-ggsave(
-  filename = file.path(plot_dir, "variance_explained_topFactors.pdf"), plot = pvar,
-  width = 8, height = 4
-)
-# Get weights and prepare modality contribution plots
+# Modality contribution per factor, with the variance the cell type
+# explains drawn over it. One panel rather than two, as in the Blueprint
+# figure, so the bars and the R2 line share an x axis.
 weights_df <- get_weights(MOFAobject.trained, as.data.frame = TRUE)
 weights_df <- weights_df %>% mutate(value_abs = abs(value), value_signed = value)
 
-# Aggregate absolute weights per view × factor and compute fraction per factor
 agg <- weights_df %>%
   filter(factor %in% top_factors) %>%
   group_by(factor, view) %>%
@@ -166,80 +178,62 @@ agg <- weights_df %>%
   mutate(frac = sum_abs / sum(sum_abs)) %>%
   ungroup()
 
+unmapped_views <- setdiff(unique(agg$view), names(view_labels))
+if (length(unmapped_views) > 0) {
+  stop("No display name for view(s): ", paste(unmapped_views, collapse = ", "))
+}
+agg$view <- factor(unname(view_labels[as.character(agg$view)]), levels = names(view_colors))
 agg$factor <- factor(agg$factor, levels = top_factors)
 
-# Plot stacked contribution (fraction)
-p_modality_frac <- ggplot(agg, aes(x = factor, y = frac, fill = view)) +
-  geom_bar(stat = "identity", width = 0.7) +
-  geom_text(aes(label = ifelse(frac > 0.03, paste0(round(frac * 100, 1), "%"), "")),
+r2_line <- r2_df[r2_df$Factor %in% top_factors, ]
+r2_line$Factor <- factor(r2_line$Factor, levels = top_factors)
+
+p_modality_frac <- ggplot(agg, aes(x = factor, y = frac)) +
+  geom_bar(aes(fill = view), stat = "identity", width = 0.7) +
+  geom_text(aes(group = view, label = ifelse(frac > 0.03, paste0(round(frac * 100, 1), "%"), "")),
     position = position_stack(vjust = 0.5), size = 3
   ) +
-  scale_y_continuous(labels = percent_format(accuracy = 1)) +
-  scale_fill_viridis_d(option = "C") +
-  labs(
-    x = "Factor", y = "Relative contribution (|weights| fraction)", fill = "View",
-    title = "Modality contribution per factor (weights-based)"
+  geom_line(data = r2_line, aes(x = Factor, y = R2, group = 1, colour = "Variance Explained (R2)")) +
+  geom_point(data = r2_line, aes(x = Factor, y = R2, colour = "Variance Explained (R2)")) +
+  scale_colour_manual(values = c("Variance Explained (R2)" = "purple"), name = NULL) +
+  scale_y_continuous(
+    labels = percent_format(accuracy = 1),
+    sec.axis = sec_axis(~., name = expression(Variance ~ Explained ~ (R^2)))
   ) +
-  theme_classic(base_size = 12)
+  scale_fill_manual(values = view_colors) +
+  labs(x = "Factor", y = "Relative contribution (|weights| fraction)", fill = "View") +
+  theme_classic(base_size = 12) +
+  theme(axis.title.y.right = element_text(colour = "purple"))
 
 ggsave(
-  filename = file.path(plot_dir, "modality_contribution_fraction_topFactors.pdf"), plot = p_modality_frac,
-  width = 8, height = 4
+  filename = file.path(plot_dir, "modality_contribution_fraction_R2.pdf"),
+  plot = p_modality_frac, width = 8, height = 4.5
 )
 
-# Also plot absolute sums (dodged), with optional log-scale if large dynamic range
-p_modality_abs <- ggplot(agg, aes(x = factor, y = sum_abs, fill = view)) +
-  geom_bar(stat = "identity", position = position_dodge(width = 0.8)) +
-  geom_text(aes(label = round(sum_abs, 1)), position = position_dodge(width = 0.8), vjust = -0.5, size = 3) +
-  scale_y_continuous(trans = "log10", labels = scales::comma_format()) +
-  scale_fill_viridis_d(option = "C") +
-  labs(
-    x = "Factor", y = "Sum of |weights| (log10 scale)", fill = "View",
-    title = "Absolute modality contribution per factor (sum |weights|)"
-  ) +
-  theme_classic(base_size = 12)
+# The aggregate behind the panel, so 04 can redraw it without retraining
+write.csv(agg, file.path(table_dir, "echo_mofa_modality_contribution.csv"), row.names = FALSE)
+write.csv(r2_df, file.path(table_dir, "echo_mofa_factor_celltype_R2.csv"), row.names = FALSE)
 
-ggsave(
-  filename = file.path(plot_dir, "modality_contribution_abs_topFactors_log.pdf"), plot = p_modality_abs,
-  width = 9, height = 4
-)
-
-# Top TF dotplot (signed + magnitude)
+# Top weighted features per factor, kept for the tables rather than a dotplot
 dot_topN <- 6
 top_by_factor <- weights_df %>%
   group_by(factor) %>%
   arrange(desc(value_abs)) %>%
   slice_head(n = dot_topN) %>%
-  ungroup() %>%
-  mutate(feature = factor(feature, levels = unique(feature)))
-
-p_dot <- ggplot(top_by_factor, aes(x = factor, y = feature, size = value_abs, color = value_signed)) +
-  geom_point(alpha = 0.9) +
-  scale_color_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0, limits = c(min(top_by_factor$value_signed), max(top_by_factor$value_signed))) +
-  scale_size_continuous(range = c(2, 6)) +
-  labs(
-    x = "Factor", y = "TF (feature)", color = "Signed weight", size = "|weight|",
-    title = paste0("Top ", dot_topN, " TFs per factor (signed weights)")
-  ) +
-  theme_classic(base_size = 11) +
-  theme(axis.text.y = element_text(size = 8))
-
-ggsave(filename = file.path(plot_dir, "topTFs_dotplot_signed.pdf"), plot = p_dot, width = 10, height = 6)
+  ungroup()
 
 # The ECHO top TFs, written out so the footprint scripts can use this
 # dataset's own list instead of the Blueprint one
-table_dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/tables"
-if (!dir.exists(table_dir)) dir.create(table_dir, recursive = TRUE)
 write.csv(
   top_by_factor[, c("feature", "factor", "view", "value", "value_abs")],
   file.path(table_dir, "mofa_echo_topTFs.csv"),
   row.names = FALSE
 )
 
-# Combine panels into a single figure for main text (example)
-# Use p_factors_scatter, p_modality_frac, p_variance_expl, p_dot
-combined_fig <- (p_factors_scatter + p_modality_frac) / (p_variance_expl + p_dot) + plot_annotation(tag_levels = "A")
-ggsave(filename = file.path(plot_dir, "figure_combined_panels.pdf"), plot = combined_fig, width = 12, height = 10)
+# The training diagnostics on one page. The manuscript figure is
+# assembled in 04, which adds the SELEX panel and the paired heatmaps.
+combined_fig <- (p_factors_scatter / p_modality_frac) + plot_annotation(tag_levels = "A")
+ggsave(filename = file.path(plot_dir, "figure_combined_panels.pdf"), plot = combined_fig, width = 10, height = 9)
 
 # Save intermediate tables for reproducibility
 write.csv(agg, file.path(r_objects_dir, "modality_contribution_by_factor.csv"), row.names = FALSE)
@@ -248,9 +242,10 @@ write.csv(r2_df, file.path(r_objects_dir, "factor_celltype_R2.csv"), row.names =
 
 message("All done. Figures saved to: ", plot_dir, "  |  R objects / tables saved to: ", r_objects_dir)
 
-# Extract factors
+# Extract factors, cell type joined on the sample as above
 factors_long <- get_factors(MOFAobject.trained, as.data.frame = TRUE)
-factors_long$celltype <- metadata$celltype # ensure metadata aligned
+factors_long$sample <- as.character(factors_long$sample)
+factors_long <- left_join(factors_long, metadata, by = "sample")
 
 # Filter to top factors (optional)
 top_factors <- c("Factor1", "Factor2", "Factor3", "Factor4", "Factor7")
@@ -274,63 +269,4 @@ ggsave(
   width = 8, height = 5
 )
 
-# Total variance explained per view
-r2_per_factor_df <- get_variance_explained(MOFAobject.trained)$r2_per_factor$group1
-r2_per_factor_df <- as.data.frame(r2_per_factor_df)
-
-# Add Factor as a column
-r2_per_factor_df <- r2_per_factor_df %>%
-  rownames_to_column(var = "Factor")
-
-# Convert to long format and use fractions
-r2_long <- r2_per_factor_df %>%
-  pivot_longer(cols = -Factor, names_to = "View", values_to = "R2_percent") %>%
-  mutate(R2_fraction = R2_percent / 100)
-
-# Filter for the top factors (e.g., Factor 1-7, where contribution drops off)
-top_n_factors <- 7
-top_factors_levels <- paste0("Factor", 1:top_n_factors)
-
-r2_long_top <- r2_long %>%
-  filter(Factor %in% top_factors_levels) %>%
-  mutate(Factor = factor(Factor, levels = top_factors_levels))
-
-# Define custom colors for the views
-view_colors <- c("green", "blue")
-
-# Plot 2: Variance Explained per Factor by View
-pvar_per_factor <- ggplot(r2_long_top, aes(x = Factor, y = R2_fraction, fill = View)) +
-  geom_bar(stat = "identity", position = "dodge") + # Use dodge for side-by-side bars
-  scale_y_continuous(labels = percent_format(accuracy = 1)) +
-  scale_fill_manual(values = view_colors) + # Use custom green and blue colors
-  labs(
-    x = "Factor", y = "Variance Explained (R²)", fill = "View",
-    title = paste0("Variance Explained per Factor by View (Top ", top_n_factors, " Factors)")
-  ) +
-  theme_classic(base_size = 14)
-
-ggsave(
-  filename = file.path(plot_dir, "variance_explained_per_factor_topFactors.pdf"), plot = pvar_per_factor,
-  width = 9, height = 5
-)
-
-# Plot a correlation for single top TF between chromVar and mtfr (e.g., BATF)
-chromVar_BATF <- chromVar["BATF", ]
-mtfr_BATF <- mtfr["BATF", ]
-data_scatter <- data.frame(
-  chromVar = chromVar_BATF,
-  mtfr = mtfr_BATF,
-  celltype = metadata$celltype
-)
-
-p_data_scatter <- ggplot(data_scatter, aes(x = chromVar, y = mtfr, color = celltype)) +
-  geom_point() +
-  geom_smooth(method = "lm", color = "black", se = FALSE) +
-  scale_color_manual(values = cell_type_colors) +
-  theme_classic(base_size = 13) +
-  labs(title = "TF Activity Correlation (chromVar vs mtfr) for BATF")
-ggsave(
-  filename = file.path(plot_dir, "BATF_chromVar_vs_mtfr_scatter.pdf"),
-  plot = p_data_scatter, width = 6, height = 5
-)
 #####################################################################
