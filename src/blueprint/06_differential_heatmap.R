@@ -108,7 +108,9 @@ row_zscore <- function(mat) {
 }
 
 # Heatmap of the Z-scores, samples in columns, motifs in rows.
-# Both dimensions are clustered, the cell type bar sits on top.
+# Columns are split by cell type and clustered within each block, so the
+# dendrogram describes the samples of one cell type rather than mixing
+# them. Rows are clustered across the whole matrix.
 plot_zscore_heatmap <- function(mat, cell_types, title, file) {
   if (nrow(mat) < 2) {
     log_warn(basename(file), ": only ", nrow(mat), " motif(s), skipping the heatmap")
@@ -121,6 +123,11 @@ plot_zscore_heatmap <- function(mat, cell_types, title, file) {
     annotation_name_gp = gpar(fontsize = 8),
     show_legend = TRUE
   )
+
+  # The palette order fixes the block order, so it matches every other
+  # Blueprint panel rather than following the clustering
+  column_split_factor <- factor(cell_types, levels = present)
+
   ht <- Heatmap(
     mat,
     name = "methylTFR\nZ-scores",
@@ -128,6 +135,9 @@ plot_zscore_heatmap <- function(mat, cell_types, title, file) {
     top_annotation = ha,
     column_title = title,
     column_title_gp = gpar(fontsize = 10),
+    column_split = column_split_factor,
+    cluster_column_slices = FALSE,
+    column_gap = unit(0.8, "mm"),
     show_row_names = TRUE,
     show_column_names = FALSE,
     row_names_side = "right",
