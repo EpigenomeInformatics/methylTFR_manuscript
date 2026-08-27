@@ -55,6 +55,15 @@ cut.mean.diff <- 0.1
 # TFs shown side by side on the paired heatmap. Set to NULL to fall back to
 # the union of the top.n motifs of each contrast. Every name here must exist
 # both as a motif and as a gene symbol, the ones that do not are reported.
+# TFs given their own expression against deviation scatter. NULL falls
+# back to the TFs on the paired heatmap.
+scatter.tfs <- NULL
+
+# The scatter uses the same Z-scores as the paired heatmap, so the
+# annotated correlation is the one the correlation strip shows. Set to
+# FALSE to plot the raw deviations against the raw expression instead.
+scatter.use.z <- TRUE
+
 heatmap.tfs <- c(
   "XBP1", "ZNF449", "IRF9", "RFX3", "NFE2L1", "RBPJ", "HEY1", "RORB",
   "MEF2C", "TFEC", "BATF3", "NFE2", "HEY2", "HES7", "ZFP57", "EBF1",
@@ -557,6 +566,100 @@ draw(ht_mtfr + ht_gex + ha_cor,
 )
 dev.off()
 log_info("Wrote ", file)
+
+#####################################################################
+# TF expression against methylTFR deviation, one panel per TF
+#####################################################################
+
+# Raw values are pulled from the unscaled matrices when scatter.use.z is
+# FALSE, in which case the annotated correlation is recomputed on them
+scatter_mtfr <- if (scatter.use.z) mtfr_mat else deviations_mat
+scatter_gex <- if (scatter.use.z) gex_mat else as.matrix(tf_expr)
+
+if (!scatter.use.z) {
+  colnames(scatter_mtfr) <- sample_labels
+}
+
+scatter_axis_x <- if (scatter.use.z) "TF expression Z-score" else "TF expression"
+scatter_axis_y <- if (scatter.use.z) "methylTFR Z-score" else "methylTFR deviation"
+
+plot_expr_scatter <- function(tf) {
+  samples <- intersect(colnames(scatter_mtfr), colnames(scatter_gex))
+  df <- data.frame(
+    expression = as.numeric(scatter_gex[tf, samples]),
+    deviation = as.numeric(scatter_mtfr[tf, samples]),
+    cellType = sub("^.*_", "", samples),
+    donor = sub("_.*$", "", samples),
+    stringsAsFactors = FALSE
+  )
+  cor_val <- suppressWarnings(cor(df$expression, df$deviation,
+    method = "pearson", use = "complete.obs"
+  ))
+
+  ggplot(df, aes(x = expression, y = deviation)) +
+    geom_smooth(method = "lm", formula = y ~ x, colour = "grey40", se = FALSE, linewidth = 0.6) +
+    geom_point(aes(colour = cellType, shape = donor), size = 3, alpha = 0.9) +
+    scale_colour_manual(values = cell_type_colors, name = "Subtype") +
+    scale_shape_manual(values = c(16, 17, 15, 3), name = "Donor") +
+    annotate("text",
+      x = Inf, y = Inf, hjust = 1.05, vjust = 1.4, size = 4,
+      label = paste0("r = ", format(round(cor_val, 2), nsmall = 2))
+    ) +
+    labs(title = tf, x = scatter_axis_x, y = scatter_axis_y) +
+    theme_classic(base_size = 13) +
+    theme(plot.title = element_text(hjust = 0, face = "plain"))
+}
+
+scatter_candidates <- if (is.null(scatter.tfs)) shared_tfs else scatter.tfs
+scatter_available <- Reduce(intersect, list(
+  scatter_candidates, rownames(scatter_mtfr), rownames(scatter_gex)
+))
+scatter_missing <- setdiff(scatter_candidates, scatter_available)
+if (length(scatter_missing) > 0) {
+  log_warn(
+    length(scatter_missing), " TF(s) are not on both sides, no scatter: ",
+    paste(head(scatter_missing, 10), collapse = ", ")
+  )
+}
+
+if (length(scatter_available) == 0) {
+  log_warn("No TF could be scattered")
+} else {
+  scatter.dir <- file.path(plot.dir, "expr_vs_deviation_scatters")
+  if (!dir.exists(scatter.dir)) dir.create(scatter.dir, recursive = TRUE)
+
+  for (tf in scatter_available) {
+    file <- file.path(scatter.dir, paste0("scatter_expr_vs_mtfr_", make.names(tf), ".pdf"))
+    ggsave(file, plot_expr_scatter(tf), width = 5.5, height = 4.5)
+  }
+  log_info("Wrote ", length(scatter_available), " scatters to ", scatter.dir)
+
+  # The same panels on one page, ordered by how well the two agree
+  if (requireNamespace("patchwork", quietly = TRUE) && length(scatter_available) > 1) {
+    # row_cor only covers the paired heatmap TFs, so anything outside it
+    # keeps its input order rather than sorting on an NA
+    scored <- intersect(scatter_available, names(row_cor))
+    ordered_tfs <- c(
+      scored[order(-abs(row_cor[scored]))],
+      setdiff(scatter_available, scored)
+    )
+    ordered_tfs <- head(ordered_tfs, 12)
+    panels <- lapply(ordered_tfs, plot_expr_scatter)
+    combined <- patchwork::wrap_plots(panels, ncol = 3, guides = "collect")
+    file <- file.path(plot.dir, "scatter_expr_vs_mtfr_panels.pdf")
+    ggsave(file, combined, width = 15, height = 4.2 * ceiling(length(ordered_tfs) / 3))
+    log_info("Wrote ", file)
+  }
+
+  write.csv(
+    data.frame(
+      TF = shared_tfs, correlation = unname(row_cor[shared_tfs]),
+      stringsAsFactors = FALSE
+    ),
+    file.path(table.dir, "memtcells_expr_vs_mtfr_correlation.csv"),
+    row.names = FALSE
+  )
+}
 
 # The two halves on their own, for the supplement
 for (nm in c("mtfr", "gex")) {

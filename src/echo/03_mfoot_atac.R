@@ -171,7 +171,8 @@ foot_plots <- plotFootprints(
   pal = cell_type_colors,
   plotName = "Integrative_Footprints_JASPAR_by_cellType",
   addDOC = FALSE,
-  plot = FALSE
+  plot = FALSE,
+  force = TRUE
 )
 
 if (is.null(names(foot_plots))) names(foot_plots) <- names(motifPositions[markerMotifs])
