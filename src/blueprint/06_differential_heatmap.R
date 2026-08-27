@@ -46,10 +46,13 @@ rnb.tag <- "RnBeads_230826"
 dev.tag <- "mTFR_devs_230826"
 sannot.file <- file.path(analysis.dir, rnb.tag, "reports", "data_import_data", "annotation.csv")
 
-plot.dir <- file.path(analysis.dir, "diff_heatmaps_230826")
+# Figures live in the repository, next to the tables they belong with.
+# Only the footprints stay under analysis.dir, they are too many for git.
+github.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript"
+plot.dir <- file.path(github.dir, "figures", "blueprint", "diff_heatmaps_230826")
 if (!dir.exists(plot.dir)) dir.create(plot.dir, recursive = TRUE)
 
-table.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/tables/"
+table.dir <- file.path(github.dir, "tables")
 if (!dir.exists(table.dir)) dir.create(table.dir, recursive = TRUE)
 
 # Remap to cleaner group names, same mapping as 03

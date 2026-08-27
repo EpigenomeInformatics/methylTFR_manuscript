@@ -35,9 +35,13 @@ set.seed(12)
 use_python(Sys.which("python"), required = TRUE)
 motifSet <- "jaspar2020_distal"
 
-# Cell type groups excluded from the figures. Only the "other" catch all
-# is dropped, plasma is kept and shown.
-drop.cell.types <- "Other"
+# Cell type groups excluded from the figures. Plasma is kept and shown.
+drop.cell.types <- c("Other", "Thymocyte")
+
+# Motifs given an expression against deviation scatter. NULL takes the
+# most variable motifs of the paired heatmap.
+scatter.tfs <- NULL
+scatter.n <- 12
 
 num.factors <- 14
 top.factors <- 7 # factors carried into the strip plot
@@ -109,10 +113,12 @@ map.file <- file.path(mofa.dir, "bp_rna_wgbs_map.tsv")
 model.hdf5 <- file.path(mofa.dir, "mtfr_expr_model_bp.hdf5")
 model.rds <- file.path(mofa.dir, "mtfr_expr_model_bp.rds")
 
-plot.dir <- file.path(analysis.dir, "mofa_figures_230826")
+# Figures live in the repository, next to the tables they belong with
+github.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript"
+plot.dir <- file.path(github.dir, "figures", "blueprint", "mofa_230826")
 if (!dir.exists(plot.dir)) dir.create(plot.dir, recursive = TRUE)
 
-table.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/tables"
+table.dir <- file.path(github.dir, "tables")
 if (!dir.exists(table.dir)) dir.create(table.dir, recursive = TRUE)
 
 selex.file <- "/icbb/projects/igunduz/exposure_atlas_manuscript/sample_annots/Selex_data.csv"
@@ -513,6 +519,83 @@ draw(Heatmap(
 ))
 dev.off()
 log_info("Wrote ", file)
+
+#####################################################################
+# TF expression against methylTFR deviation, per motif
+#####################################################################
+
+# Both matrices are already restricted to the paired samples and Z-scored,
+# so a point is one sample and the annotated r is the value the correlation
+# column of the heatmap shows.
+names(row_correlation) <- rownames(mtfr_heatmap)
+
+scatter_motifs <- if (is.null(scatter.tfs)) {
+  # The motifs where the two modalities have most to say, by the spread of
+  # the methylTFR side rather than by correlation, so a flat motif with an
+  # accidentally high r does not take a panel
+  spread <- apply(mtfr_heatmap, 1, sd, na.rm = TRUE)
+  names(sort(spread, decreasing = TRUE))[seq_len(min(scatter.n, length(spread)))]
+} else {
+  intersect(scatter.tfs, rownames(mtfr_heatmap))
+}
+
+absent_scatter <- setdiff(
+  if (is.null(scatter.tfs)) character(0) else scatter.tfs,
+  rownames(mtfr_heatmap)
+)
+if (length(absent_scatter) > 0) {
+  log_warn(
+    length(absent_scatter), " motif(s) are not on the paired heatmap, no scatter: ",
+    paste(head(absent_scatter, 10), collapse = ", ")
+  )
+}
+
+plot_expr_scatter <- function(motif) {
+  df <- data.frame(
+    expression = as.numeric(rna_heatmap[motif, ]),
+    deviation = as.numeric(mtfr_heatmap[motif, ]),
+    celltype = factor(heat_groups, levels = cell_type_levels),
+    stringsAsFactors = FALSE
+  )
+  r <- row_correlation[[motif]]
+
+  ggplot(df, aes(x = expression, y = deviation)) +
+    geom_smooth(method = "lm", formula = y ~ x, colour = "grey40", se = FALSE, linewidth = 0.6) +
+    geom_point(aes(colour = celltype), size = 2, alpha = 0.9) +
+    scale_colour_manual(values = cell_type_colors, name = "Cell type", drop = TRUE) +
+    annotate("text",
+      x = Inf, y = Inf, hjust = 1.05, vjust = 1.4, size = 3.6,
+      label = paste0("r = ", format(round(r, 2), nsmall = 2))
+    ) +
+    labs(title = motif, x = "TF expression Z-score", y = "methylTFR Z-score") +
+    theme_classic(base_size = 12) +
+    theme(plot.title = element_text(hjust = 0, face = "plain"))
+}
+
+if (length(scatter_motifs) == 0) {
+  log_warn("No motif could be scattered")
+} else if (!requireNamespace("patchwork", quietly = TRUE)) {
+  log_warn("patchwork is not installed, the scatter panel is skipped")
+} else {
+  # One page only, the panels are not written individually as well
+  panels <- lapply(scatter_motifs, plot_expr_scatter)
+  combined <- patchwork::wrap_plots(panels, ncol = 3, guides = "collect")
+  file <- file.path(plot.dir, "scatter_expr_vs_mtfr_panels_bp.pdf")
+  ggsave(file, combined,
+    width = 15, height = 4 * ceiling(length(scatter_motifs) / 3)
+  )
+  log_info("Wrote ", file, " for ", length(scatter_motifs), " motifs")
+
+  write.csv(
+    data.frame(
+      motif = rownames(mtfr_heatmap),
+      correlation = unname(row_correlation),
+      stringsAsFactors = FALSE
+    ),
+    file.path(table.dir, "bp_expr_vs_mtfr_correlation.csv"),
+    row.names = FALSE
+  )
+}
 
 #####################################################################
 # Factor annotation column

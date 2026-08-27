@@ -34,7 +34,7 @@ set.seed(12)
 use_python(Sys.which("python"), required = TRUE)
 motifSet <- "jaspar2020_distal"
 
-drop.cell.types <- c("Other", "Thymocyte")
+drop.cell.types <- "Other"
 
 num.factors <- 14
 top.factors <- 7
@@ -105,7 +105,7 @@ diff.file <- file.path(table.dir, paste0("diff_", motifSet, "_allcelltypes.RDS")
 model.hdf5 <- file.path(mofa.dir, "mtfr_viper_model_bp.hdf5")
 model.rds <- file.path(mofa.dir, "mtfr_viper_model_bp.rds")
 
-plot.dir <- file.path(github.dir, "figures", "blueprint", "mofa_viper_230826")
+plot.dir <- file.path(analysis.dir, "mofa_viper_figures_230826")
 if (!dir.exists(plot.dir)) dir.create(plot.dir, recursive = TRUE)
 if (!dir.exists(table.dir)) dir.create(table.dir, recursive = TRUE)
 

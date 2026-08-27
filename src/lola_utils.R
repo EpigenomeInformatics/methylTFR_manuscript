@@ -9,9 +9,9 @@ LOLA_COLORS <- c("loss" = "#A1D99B", "gain" = "#2E8B57")
 
 #' Direction bar drawn above a volcano panel.
 #'
-#' A standalone strip rather than an annotation, because the volcano is
-#' facetted into a loss and a gain half and an annotation would be repeated
-#' in each facet instead of spanning both.
+#' A standalone strip rather than an annotation: the volcano is facetted into
+#' a loss and a gain half, and an annotation is repeated in each facet instead
+#' of spanning both.
 #'
 #' @param grp1 group on the right, the one "gain" refers to
 #' @param grp2 group on the left
@@ -37,11 +37,6 @@ directionHeader <- function(grp1, grp2, cell_colors = CELL_TYPE_COLORS) {
 
 #' Volcano plot of a LOLA enrichment result.
 #'
-#' The previous version read the table from a global object called `res`
-#' rather than from its own `lolaRes` argument, so it silently plotted
-#' whatever happened to be in the calling environment, or failed with
-#' "object 'res' not found". It now uses the argument.
-#'
 #' @param lolaRes the LOLA result object, res$region is indexed below
 #' @param outputDir directory the pdf is written to
 #' @param comparison name or index of the element of lolaRes$region
@@ -50,13 +45,19 @@ directionHeader <- function(grp1, grp2, cell_colors = CELL_TYPE_COLORS) {
 #' @param grp1 group that "hyper" refers to, drawn on the right of the header
 #' @param grp2 the reference group, drawn on the left
 #' @param signifCol significance column, "qValue" is converted to -log10
-#' @param n.label number of motifs labelled per direction
+#' @param n.label number of motifs labelled per direction, used only when
+#'   motifs is NULL
+#' @param motifs character vector of motif names to label. When given, these
+#'   are labelled on whichever side they fall and the ranking is ignored, so
+#'   the same motifs appear in every contrast. Names are matched after the
+#'   JASPAR accession is stripped, so "FOSL1::JUN" rather than
+#'   "MA1128.1_FOSL1::JUN".
 #' @param userSets the two userSet names holding the hyper and hypo sets
 #' @param cell_colors colours of the two groups in the header
 #' @return the ggplot object, invisibly
 lolaVolcanoPlot <- function(lolaRes, outputDir, comparison, region,
                             label = NULL, grp1 = NULL, grp2 = NULL,
-                            signifCol = "qValue", n.label = 10,
+                            signifCol = "qValue", n.label = 10, motifs = NULL,
                             userSets = c("rankCut_1000_hyper", "rankCut_1000_hypo"),
                             cell_colors = CELL_TYPE_COLORS) {
   if (is.null(label)) label <- as.character(comparison)
@@ -74,9 +75,8 @@ lolaVolcanoPlot <- function(lolaRes, outputDir, comparison, region,
       paste(names(lolaRes$region[[comparison]]), collapse = ", ")
     )
   }
-  # LOLA results are data.tables. Their [[ ]] errors with "subscript out of
-  # bounds" where a data.frame returns NULL, and $<- on them copies with a
-  # warning, so the table is converted once here.
+  # LOLA results are data.tables, whose [[ ]] and $<- semantics differ from
+  # data.frames, so the table is converted once here.
   df <- as.data.frame(lolaRes$region[[comparison]][[region]])
   needed <- c("userSet", "description", "oddsRatio", "qValue")
   missing_cols <- setdiff(needed, colnames(df))
@@ -109,16 +109,50 @@ lolaVolcanoPlot <- function(lolaRes, outputDir, comparison, region,
   oddsRatioCol <- "log2OR"
   df$log2OR <- log2(df$oddsRatio)
 
-  pick_top <- function(cond) {
-    d <- df[df$condition == cond & df$differential == "Differential", ]
-    d <- d[order(-d[[signifCol]]), ]
-    d <- head(d, n = n.label)
-    dplyr::select(d, description, condition, log2OR, qValueLog)
+  df$motif <- .strip_motif_id(df$description)
+
+  if (is.null(motifs)) {
+    # Rank by significance within each direction
+    pick_top <- function(cond) {
+      d <- df[df$condition == cond & df$differential == "Differential", ]
+      d <- d[order(-d[[signifCol]]), ]
+      head(d, n = n.label)
+    }
+    top_gain <- pick_top("gain")
+    top_loss <- pick_top("loss")
+  } else {
+    # A fixed set, so the same motifs are named in every contrast. A motif
+    # can appear in both userSets, in which case it is labelled on the side
+    # where it is enriched.
+    absent <- setdiff(motifs, df$motif)
+    if (length(absent) > 0) {
+      message(
+        length(absent), " requested motif(s) are not in this LOLA table: ",
+        paste(utils::head(absent, 15), collapse = ", ")
+      )
+    }
+    wanted <- df[df$motif %in% motifs, ]
+    if (nrow(wanted) == 0) {
+      stop(
+        "None of the requested motifs are in the LOLA table. Descriptions ",
+        "look like '", df$description[1], "'."
+      )
+    }
+    # One row per motif and direction, the most significant if repeated
+    wanted <- wanted[order(-wanted[[signifCol]]), ]
+    wanted <- wanted[!duplicated(paste(wanted$motif, wanted$condition)), ]
+    top_gain <- wanted[wanted$condition == "gain", ]
+    top_loss <- wanted[wanted$condition == "loss", ]
   }
-  top_motifs_gain <- pick_top("gain")
-  top_motifs_loss <- pick_top("loss")
-  top_motifs_loss$log2OR <- -top_motifs_loss$log2OR
-  top_motifs <- rbind(top_motifs_gain, top_motifs_loss)
+
+  keep_cols <- c("description", "condition", "log2OR", "qValueLog")
+  top_gain <- top_gain[, keep_cols, drop = FALSE]
+  top_loss <- top_loss[, keep_cols, drop = FALSE]
+  top_loss$log2OR <- -top_loss$log2OR
+  top_motifs <- rbind(top_gain, top_loss)
+  if (nrow(top_motifs) == 0) {
+    message("No motif could be labelled on this volcano")
+  }
 
   pp <- plotVolcano(df, top_motifs, oddsRatioCol, signifCol)
 
@@ -166,7 +200,7 @@ plotVolcano <- function(df, top_motifs, oddsRatioCol, signifCol,
 
   # Distance from the centre, so both sides run outwards from zero. The
   # clamp keeps a loss set with a positive odds ratio (or the reverse) from
-  # crossing into the other panel, as in the original.
+  # crossing into the other panel.
   df$xplot <- ifelse(df$condition == "loss",
     abs(pmin(df[[oddsRatioCol]], 0)),
     pmax(df[[oddsRatioCol]], 0)
