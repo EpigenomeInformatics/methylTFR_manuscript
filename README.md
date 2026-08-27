@@ -159,21 +159,6 @@ Both footprint scripts use subtraction, so the methylation and accessibility
 panels are on the same scale, and both carry the mean activity of each cell type
 in the legend.
 
-### Chromatin accessibility
-
-The ATAC side is not recomputed here. The chromVAR scores it uses are:
-
-| What | Where |
-|---|---|
-| pseudobulk chromVAR Z-scores, adjusted, TFs x samples | `/icbb/projects/nitschre/methylTFR/scripts/other/cvar_zscores_adj_psuedobulk.R` |
-| chromVAR deviations per exposure and cell type | `exposure_atlas_manuscript/sample_annots/atac_chromvar_deviations_exposure_celltype.rds` |
-| per motif and cell type means behind the footprint legends | `<analysis.dir>/echo/mFoot_atac_230826/atac_footprint_chromvar_means.csv` |
-
-The first two carry a `.R` and a `.rds` extension respectively but both hold
-serialised matrices, so they are read with `readRDS`, the first through
-`gzfile()`. Per cell deviations live in the ArchR project itself and are
-reachable with `getMatrixFromProject()`.
-
 ---
 
 ## Bias-corrected deviations

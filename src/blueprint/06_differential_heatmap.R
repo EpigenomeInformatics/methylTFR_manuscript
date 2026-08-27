@@ -35,10 +35,18 @@ padj.cutoff <- 0.05
 # Number of motifs shown in the heatmap
 top.n <- 50
 
-# The stored Z-scores are row-wise across every sample of the run, which is
-# what the figure shows. Set this to TRUE to recompute them within the
-# samples actually plotted.
-recompute.z <- FALSE
+# Cell type groups on the heatmap, in column order. Stated as the groups
+# that are kept rather than the ones dropped, so a group that appears in a
+# later annotation is not silently added to the figure.
+keep.cell.types <- c(
+  "Granulocytes", "Monocytes", "Macrophages", "Dendritic cells",
+  "T-cells", "Thymocyte", "B-cells", "Plasma"
+)
+
+# Recomputed rather than taken from the object: the stored Z-scores are
+# row-wise over every sample of the run, so once the groups above are
+# dropped they are no longer centred on what the heatmap shows.
+recompute.z <- TRUE
 
 # Directories
 analysis.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/"
@@ -119,7 +127,7 @@ plot_zscore_heatmap <- function(mat, cell_types, title, file) {
     log_warn(basename(file), ": only ", nrow(mat), " motif(s), skipping the heatmap")
     return(invisible(NULL))
   }
-  present <- intersect(names(cell_type_colors), unique(cell_types))
+  present <- intersect(keep.cell.types, unique(cell_types))
   ha <- HeatmapAnnotation(
     `Cell type` = cell_types,
     col = list(`Cell type` = cell_type_colors[present]),
@@ -127,9 +135,10 @@ plot_zscore_heatmap <- function(mat, cell_types, title, file) {
     show_legend = TRUE
   )
 
-  # The palette order fixes the block order, so it matches every other
-  # Blueprint panel rather than following the clustering
-  column_split_factor <- factor(cell_types, levels = present)
+  # keep.cell.types fixes the block order, so it does not follow the
+  # clustering and does not change between motif sets
+  block_order <- intersect(keep.cell.types, unique(cell_types))
+  column_split_factor <- factor(cell_types, levels = block_order)
 
   ht <- Heatmap(
     mat,
@@ -210,6 +219,9 @@ sannot$bedFile <- as.character(sannot$bedFile)
 # Differential analysis, heatmap and composition, per motif set
 #####################################################################
 
+# Set once by the first motif set, so the composition is drawn a single time
+composition_of <- NULL
+
 for (motifSet in motifSets) {
   dev.file <- file.path(analysis.dir, dev.tag, paste0(motifSet, "_deviations.RDS"))
   if (!file.exists(dev.file)) {
@@ -223,10 +235,12 @@ for (motifSet in motifSets) {
   # Healthy samples carrying a cell type we can map. Groups come from the
   # annotation rather than from the sample names.
   matched <- sannot[match(colnames(dev_obj), sannot$bedFile), ]
+  mapped <- unname(group_remap[matched$cellTypeGroup])
   keep <- which(
     !is.na(matched$DISEASE) &
       matched$DISEASE == "None" &
-      matched$cellTypeGroup %in% names(group_remap)
+      matched$cellTypeGroup %in% names(group_remap) &
+      mapped %in% keep.cell.types
   )
   if (length(keep) == 0) {
     log_warn(motifSet, ": no samples left after filtering, skipping")
@@ -236,19 +250,33 @@ for (motifSet in motifSets) {
   # Subsetting the object keeps the deviations and the Z-scores aligned
   dev_obj <- dev_obj[, keep]
   cell_types <- unname(group_remap[matched$cellTypeGroup[keep]])
+  absent_groups <- setdiff(keep.cell.types, unique(cell_types))
+  if (length(absent_groups) > 0) {
+    log_warn(motifSet, ": no sample for ", paste(absent_groups, collapse = ", "))
+  }
   log_info(motifSet, ": ", length(cell_types), " samples across ",
-    length(unique(cell_types)), " cell type groups")
+    length(unique(cell_types)), " of the ", length(keep.cell.types),
+    " requested cell type groups")
   if (length(unique(cell_types)) < 2) {
     log_warn(motifSet, ": only one cell type group present, skipping")
     next
   }
 
-  # Composition of the cohort that goes into the heatmap
-  plot_composition_barplot(
-    cell_types,
-    paste0("Cell type composition (n = ", length(cell_types), ")"),
-    file.path(plot.dir, paste0("celltype_composition_", motifSet, ".pdf"))
-  )
+  # Composition of the cohort that goes into the heatmap. The same samples
+  # feed every motif set, so this is drawn once rather than per motif set.
+  if (is.null(composition_of)) {
+    plot_composition_barplot(
+      cell_types,
+      paste0("Cell type composition (n = ", length(cell_types), ")"),
+      file.path(plot.dir, "celltype_composition.pdf")
+    )
+    composition_of <- sort(colnames(dev_obj))
+  } else if (!identical(composition_of, sort(colnames(dev_obj)))) {
+    log_warn(
+      motifSet, ": a different sample set than the one the composition ",
+      "barplot was drawn from, the barplot is not redrawn"
+    )
+  }
 
   # Differential test. With more than two groups this is an ANOVA across
   # all cell types, so the motifs that come out are the ones that separate
