@@ -89,6 +89,8 @@ scatter.pairs <- NULL
 
 view_colors <- c("mtfr" = "#ED4B4A", "viper" = "#6BC75A")
 
+selex.file <- "/icbb/projects/igunduz/exposure_atlas_manuscript/sample_annots/Selex_data.csv"
+
 # Directories
 analysis.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/blueprint"
 dev.tag <- "mTFR_devs_230826"
@@ -297,6 +299,7 @@ scatter_plot <- function(fx, fy) {
     theme(legend.position = "right")
 }
 
+scatter_panels <- list()
 for (pr in pairs) {
   missing_f <- setdiff(pr, available)
   if (length(missing_f) > 0) {
@@ -304,8 +307,10 @@ for (pr in pairs) {
       ", not among the fitted factors")
     next
   }
+  p_scatter <- scatter_plot(pr[1], pr[2])
+  scatter_panels[[paste(pr, collapse = "_")]] <- p_scatter
   file <- file.path(plot.dir, paste0("factor_scatter_", pr[1], "_", pr[2], ".pdf"))
-  ggsave(file, scatter_plot(pr[1], pr[2]), width = 7, height = 5)
+  ggsave(file, p_scatter, width = 7, height = 5)
   log_info("Wrote ", file)
 }
 
@@ -506,19 +511,121 @@ row_correlation <- vapply(seq_len(nrow(mtfr_heatmap)), function(i) {
 }, numeric(1))
 row_correlation[!is.finite(row_correlation)] <- 0
 
-ha_right <- rowAnnotation(
-  `Row Corr.` = row_correlation,
-  col = list(`Row Corr.` = col_fun_cor),
-  TF = anno_text(rownames(mtfr_heatmap), gp = gpar(fontsize = 6)),
+# The methyl-SELEX call of each motif, as in 08. A motif with no entry was
+# never assayed rather than missing, so it is labelled Inconclusive.
+selex_call <- NULL
+if (!file.exists(selex.file)) {
+  log_warn("SELEX table not found, the SELEX column is skipped: ", selex.file)
+} else {
+  selex_tab <- read.csv(selex.file, skip = 20, header = TRUE, sep = ";")
+  call_col <- intersect(
+    c("methyl.SELEX.call", "Call", "methylSELEXcall"), colnames(selex_tab)
+  )
+  name_col <- intersect(c("TF.name", "TF", "TFname"), colnames(selex_tab))
+  if (length(call_col) == 0 || length(name_col) == 0) {
+    log_warn(
+      "No SELEX call or TF name column. Present: ",
+      paste(colnames(selex_tab), collapse = ", ")
+    )
+  } else {
+    idx <- match(rownames(mtfr_heatmap), selex_tab[[name_col[1]]])
+    selex_call <- ifelse(is.na(idx), "Inconclusive",
+      as.character(selex_tab[[call_col[1]]][idx])
+    )
+    selex_call[is.na(selex_call)] <- "Inconclusive"
+    log_info(
+      "SELEX calls on the heatmap: ",
+      paste(names(table(selex_call)), table(selex_call), sep = " = ", collapse = ", ")
+    )
+  }
+}
+
+selex_col_map <- NULL
+if (!is.null(selex_call)) {
+  known <- c(
+    "Inconclusive" = "#D9D9D9",
+    "Little effect" = "#BDB76B",
+    "MethylMinus" = "#8B0000",
+    "MethylPlus" = "#008080"
+  )
+  extra <- setdiff(unique(selex_call), names(known))
+  if (length(extra) > 0) {
+    log_warn("Unlisted SELEX call(s), coloured grey: ", paste(extra, collapse = ", "))
+    known <- c(known, setNames(rep("#8C8C8C", length(extra)), extra))
+  }
+  selex_col_map <- known[intersect(names(known), unique(selex_call))]
+}
+
+# The factor each motif carries its largest weight on.
+# get_weights returns feature and factor as factors, and indexing a named
+# vector with a factor uses its integer codes rather than its labels, so
+# both are coerced to character before anything is looked up by name.
+motif_factor <- rep("none", nrow(mtfr_heatmap))
+names(motif_factor) <- rownames(mtfr_heatmap)
+
+weight_top <- weights_df %>%
+  mutate(
+    feature = as.character(feature),
+    factor = as.character(factor),
+    view = as.character(view)
+  ) %>%
+  filter(view == "mtfr", feature %in% rownames(mtfr_heatmap)) %>%
+  group_by(feature) %>%
+  slice_max(value_abs, n = 1, with_ties = FALSE) %>%
+  ungroup()
+
+if (nrow(weight_top) == 0) {
+  log_warn(
+    "No mtfr weight matched a heatmap row. MOFA features look like '",
+    as.character(weights_df$feature[1]), "', the heatmap rows like '",
+    rownames(mtfr_heatmap)[1], "'. The Factors column will read none."
+  )
+} else {
+  motif_factor[weight_top$feature] <- weight_top$factor
+}
+
+stopifnot(length(motif_factor) == nrow(mtfr_heatmap))
+
+factor_levels_ann <- sort(unique(motif_factor))
+factor_col_map <- setNames(
+  colorRampPalette(brewer.pal(max(3, min(9, length(factor_levels_ann))), "Set1"))(
+    length(factor_levels_ann)
+  ),
+  factor_levels_ann
+)
+
+annotation_args <- list(
+  Factors = unname(motif_factor),
+  `Row-wise Pearson Correlation` = row_correlation,
+  col = list(
+    Factors = factor_col_map,
+    `Row-wise Pearson Correlation` = col_fun_cor
+  ),
   annotation_name_gp = gpar(fontsize = 7),
-  width = unit(26, "mm")
+  width = unit(30, "mm")
+)
+if (!is.null(selex_call)) {
+  annotation_args[["SELEX Call"]] <- selex_call
+  annotation_args$col[["SELEX Call"]] <- selex_col_map
+}
+# which = "row" is passed explicitly: rowAnnotation normally infers it from
+# its own call, but do.call evaluates anno_text() before that happens
+annotation_args$TF <- anno_text(
+  rownames(mtfr_heatmap),
+  gp = gpar(fontsize = 6), which = "row"
+)
+
+ha_right <- do.call(rowAnnotation, annotation_args)
+
+panel_d <- grid.grabExpr(
+  draw(ht_mtfr + ht_viper + ha_right,
+    merge_legend = TRUE, heatmap_legend_side = "right"
+  )
 )
 
 file <- file.path(plot.dir, "heatmap_mtfr_viper_differential_bp.pdf")
-pdf(file, width = 14, height = 10)
-draw(ht_mtfr + ht_viper + ha_right,
-  merge_legend = TRUE, heatmap_legend_side = "right"
-)
+pdf(file, width = 15, height = 11)
+grid.draw(panel_d)
 dev.off()
 log_info("Wrote ", file)
 
@@ -532,5 +639,39 @@ write.csv(
   file.path(table.dir, "bp_mtfr_viper_row_correlation.csv"),
   row.names = FALSE
 )
+
+#####################################################################
+# The assembled figure
+#####################################################################
+
+# A the modality contribution, B the factor values, C the factor scatters,
+# D the paired heatmap, which travels as the grob captured above
+if (!requireNamespace("patchwork", quietly = TRUE)) {
+  log_warn("patchwork is not installed, the assembled figure is skipped")
+} else {
+  panel_c <- if (length(scatter_panels) == 0) {
+    NULL
+  } else if (length(scatter_panels) == 1) {
+    scatter_panels[[1]]
+  } else {
+    patchwork::wrap_plots(scatter_panels, nrow = 1, guides = "collect") &
+      ggplot2::theme(legend.position = "none")
+  }
+
+  mid <- if (is.null(panel_c)) {
+    p_strip
+  } else {
+    patchwork::wrap_plots(p_strip, panel_c, ncol = 2, widths = c(1, 1))
+  }
+
+  combined <- patchwork::wrap_plots(
+    p_modality_frac, mid, patchwork::wrap_elements(full = panel_d),
+    ncol = 1, heights = c(1, 1.1, 2.4)
+  ) + patchwork::plot_annotation(tag_levels = "A")
+
+  file <- file.path(plot.dir, "figure_bp_viper_mofa_integration.pdf")
+  ggsave(file, combined, width = 16, height = 22, limitsize = FALSE)
+  log_info("Wrote ", file)
+}
 
 log_success("Finished the VIPER integration, figures in ", plot.dir)
