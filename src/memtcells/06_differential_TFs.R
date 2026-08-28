@@ -7,7 +7,6 @@
 # Differential TFs of the CD4 memory T cell subtypes:
 #   - paired heatmap of the methylTFR Z-scores and the matching TF
 #     gene expression, annotated with the row-wise correlation
-#   - mean difference of the two contrasts
 #   - LOLA volcano plots and LOLA against methylTFR
 #   - density scatter and MA plot of the RnBeads differential methylation
 #####################################################################
@@ -50,20 +49,10 @@ drop.cell.types <- "TEMRA"
 
 top.n <- 50
 cut.padj <- 0.05
-cut.mean.diff <- 0.1
 
 # TFs shown side by side on the paired heatmap. Set to NULL to fall back to
 # the union of the top.n motifs of each contrast. Every name here must exist
 # both as a motif and as a gene symbol, the ones that do not are reported.
-# TFs given their own expression against deviation scatter. NULL falls
-# back to the TFs on the paired heatmap.
-scatter.tfs <- NULL
-
-# The scatter uses the same Z-scores as the paired heatmap, so the
-# annotated correlation is the one the correlation strip shows. Set to
-# FALSE to plot the raw deviations against the raw expression instead.
-scatter.use.z <- TRUE
-
 heatmap.tfs <- c(
   "XBP1", "ZNF449", "IRF9", "RFX3", "NFE2L1", "RBPJ", "HEY1", "RORB",
   "MEF2C", "TFEC", "BATF3", "NFE2", "HEY2", "HES7", "ZFP57", "EBF1",
@@ -92,8 +81,21 @@ cut.effect.mtfr <- 0
 # more sensitive when the donors agree and less when they do not.
 diff.paired <- FALSE
 
-# Motifs labelled per direction on the standalone LOLA volcano
+# Motifs labelled on the standalone LOLA volcano. A fixed list rather
+# than the top n per direction, so the same motifs are named in the TCM
+# and the TEM panel and the two can be read side by side. Set to NULL to
+# fall back to the top top.label.lola per direction.
 top.label.lola <- 10
+lola.label.motifs <- c(
+  # AP-1, enriched on the naive side
+  "BATF::JUN", "FOS", "FOS::JUN", "FOS::JUNB", "FOS::JUND",
+  "FOSB::JUNB", "FOSL1::JUN", "FOSL1::JUNB", "FOSL1::JUND",
+  "FOSL2::JUND", "JUND", "JUN(var.2)",
+  # ETS, RUNX and TCF, enriched on the memory side
+  "ELK4", "ERF", "ERG", "ETS1", "ETV1", "ETV2", "ETV6",
+  "EWSR1-FLI1", "FLI1", "GATA1::TAL1", "LEF1", "RUNX2", "RUNX3",
+  "SPI1", "SPIB", "TCF7L1", "TCF7L2", "ZBTB7A"
+)
 
 # Motifs labelled per category on that panel. Everything differential in
 # both assays is labelled by default; lower it to Inf-free numbers if the
@@ -169,10 +171,13 @@ lola.file <- file.path(diffmeth.dir, "TF_motifs_lola.rds")
 rna.dir <- "/icbb/projects/share/datasets/memoryTcells/rna_raw_081025"
 meth.dir <- "/icbb/projects/share/datasets/memoryTcells"
 
-plot.dir <- file.path(analysis.dir, "diff_TFs_230826")
+# Figures live in the repository, next to the tables they belong with.
+# Only the footprints stay under analysis.dir, they are too many for git.
+github.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript"
+plot.dir <- file.path(github.dir, "figures", "memtcells", "diff_TFs_230826")
 if (!dir.exists(plot.dir)) dir.create(plot.dir, recursive = TRUE)
 
-table.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/tables"
+table.dir <- file.path(github.dir, "tables")
 if (!dir.exists(table.dir)) dir.create(table.dir, recursive = TRUE)
 
 #####################################################################
@@ -568,182 +573,6 @@ dev.off()
 log_info("Wrote ", file)
 
 #####################################################################
-# TF expression against methylTFR deviation, one panel per TF
-#####################################################################
-
-# Raw values are pulled from the unscaled matrices when scatter.use.z is
-# FALSE, in which case the annotated correlation is recomputed on them
-scatter_mtfr <- if (scatter.use.z) mtfr_mat else deviations_mat
-scatter_gex <- if (scatter.use.z) gex_mat else as.matrix(tf_expr)
-
-if (!scatter.use.z) {
-  colnames(scatter_mtfr) <- sample_labels
-}
-
-scatter_axis_x <- if (scatter.use.z) "TF expression Z-score" else "TF expression"
-scatter_axis_y <- if (scatter.use.z) "methylTFR Z-score" else "methylTFR deviation"
-
-plot_expr_scatter <- function(tf) {
-  samples <- intersect(colnames(scatter_mtfr), colnames(scatter_gex))
-  df <- data.frame(
-    expression = as.numeric(scatter_gex[tf, samples]),
-    deviation = as.numeric(scatter_mtfr[tf, samples]),
-    cellType = sub("^.*_", "", samples),
-    donor = sub("_.*$", "", samples),
-    stringsAsFactors = FALSE
-  )
-  cor_val <- suppressWarnings(cor(df$expression, df$deviation,
-    method = "pearson", use = "complete.obs"
-  ))
-
-  ggplot(df, aes(x = expression, y = deviation)) +
-    geom_smooth(method = "lm", formula = y ~ x, colour = "grey40", se = FALSE, linewidth = 0.6) +
-    geom_point(aes(colour = cellType, shape = donor), size = 3, alpha = 0.9) +
-    scale_colour_manual(values = cell_type_colors, name = "Subtype") +
-    scale_shape_manual(values = c(16, 17, 15, 3), name = "Donor") +
-    annotate("text",
-      x = Inf, y = Inf, hjust = 1.05, vjust = 1.4, size = 4,
-      label = paste0("r = ", format(round(cor_val, 2), nsmall = 2))
-    ) +
-    labs(title = tf, x = scatter_axis_x, y = scatter_axis_y) +
-    theme_classic(base_size = 13) +
-    theme(plot.title = element_text(hjust = 0, face = "plain"))
-}
-
-scatter_candidates <- if (is.null(scatter.tfs)) shared_tfs else scatter.tfs
-scatter_available <- Reduce(intersect, list(
-  scatter_candidates, rownames(scatter_mtfr), rownames(scatter_gex)
-))
-scatter_missing <- setdiff(scatter_candidates, scatter_available)
-if (length(scatter_missing) > 0) {
-  log_warn(
-    length(scatter_missing), " TF(s) are not on both sides, no scatter: ",
-    paste(head(scatter_missing, 10), collapse = ", ")
-  )
-}
-
-if (length(scatter_available) == 0) {
-  log_warn("No TF could be scattered")
-} else {
-  scatter.dir <- file.path(plot.dir, "expr_vs_deviation_scatters")
-  if (!dir.exists(scatter.dir)) dir.create(scatter.dir, recursive = TRUE)
-
-  for (tf in scatter_available) {
-    file <- file.path(scatter.dir, paste0("scatter_expr_vs_mtfr_", make.names(tf), ".pdf"))
-    ggsave(file, plot_expr_scatter(tf), width = 5.5, height = 4.5)
-  }
-  log_info("Wrote ", length(scatter_available), " scatters to ", scatter.dir)
-
-  # The same panels on one page, ordered by how well the two agree
-  if (requireNamespace("patchwork", quietly = TRUE) && length(scatter_available) > 1) {
-    # row_cor only covers the paired heatmap TFs, so anything outside it
-    # keeps its input order rather than sorting on an NA
-    scored <- intersect(scatter_available, names(row_cor))
-    ordered_tfs <- c(
-      scored[order(-abs(row_cor[scored]))],
-      setdiff(scatter_available, scored)
-    )
-    ordered_tfs <- head(ordered_tfs, 12)
-    panels <- lapply(ordered_tfs, plot_expr_scatter)
-    combined <- patchwork::wrap_plots(panels, ncol = 3, guides = "collect")
-    file <- file.path(plot.dir, "scatter_expr_vs_mtfr_panels.pdf")
-    ggsave(file, combined, width = 15, height = 4.2 * ceiling(length(ordered_tfs) / 3))
-    log_info("Wrote ", file)
-  }
-
-  write.csv(
-    data.frame(
-      TF = shared_tfs, correlation = unname(row_cor[shared_tfs]),
-      stringsAsFactors = FALSE
-    ),
-    file.path(table.dir, "memtcells_expr_vs_mtfr_correlation.csv"),
-    row.names = FALSE
-  )
-}
-
-# The two halves on their own, for the supplement
-for (nm in c("mtfr", "gex")) {
-  ht <- if (nm == "mtfr") ht_mtfr else ht_gex
-  file <- file.path(plot.dir, paste0(nm, "_zscores_diffmotifs_memTcells.pdf"))
-  pdf(file, width = 8, height = 11)
-  draw(ht + rowAnnotation(TF = anno_text(shared_tfs, gp = gpar(fontsize = 8))))
-  dev.off()
-  log_info("Wrote ", file)
-}
-
-#####################################################################
-# Mean difference of the two contrasts
-#####################################################################
-
-# dplyr verbs are namespace qualified from here on: org.Hs.eg.db attaches
-# AnnotationDbi, whose select() masks dplyr::select() because it loads last
-comb_df <- results[["EM"]] %>%
-  dplyr::select(motifs, zdiff_em = zdiff,
-    mean_difference_em = mean_difference,
-    p_value_adjusted_em = p_value_adjusted) %>%
-  dplyr::inner_join(
-    results[["CM"]] %>%
-      dplyr::select(motifs, zdiff_cm = zdiff,
-        mean_difference_cm = mean_difference,
-        p_value_adjusted_cm = p_value_adjusted),
-    by = "motifs"
-  )
-
-comb_df$isDiff <- dplyr::case_when(
-  abs(comb_df$mean_difference_em) > cut.mean.diff & comb_df$p_value_adjusted_em < cut.padj &
-    abs(comb_df$mean_difference_cm) > cut.mean.diff & comb_df$p_value_adjusted_cm < cut.padj ~ "Differential Both",
-  abs(comb_df$mean_difference_em) > cut.mean.diff & comb_df$p_value_adjusted_em < cut.padj ~ "Differential EM",
-  abs(comb_df$mean_difference_cm) > cut.mean.diff & comb_df$p_value_adjusted_cm < cut.padj ~ "Differential CM",
-  TRUE ~ "Not Differential"
-)
-
-# Label the strongest motifs of each single contrast
-comb_df$label <- NA_character_
-for (grp in c("Differential EM", "Differential CM")) {
-  col <- if (grp == "Differential EM") "mean_difference_em" else "mean_difference_cm"
-  rows <- which(comb_df$isDiff == grp)
-  if (length(rows) == 0) next
-  top_idx <- order(abs(comb_df[[col]][rows]), decreasing = TRUE)[seq_len(min(20, length(rows)))]
-  comb_df$label[rows[top_idx]] <- comb_df$motifs[rows[top_idx]]
-}
-
-cor_val <- cor(comb_df$zdiff_cm, comb_df$zdiff_em, method = "pearson", use = "complete.obs")
-
-diff_colors <- c(
-  "Differential CM" = "#41AB5D",
-  "Differential EM" = "#00441B",
-  "Differential Both" = "#8E0152",
-  "Not Differential" = "grey70"
-)
-
-p <- ggplot(comb_df, aes(x = zdiff_cm, y = zdiff_em, color = isDiff)) +
-  geom_point(size = 2, alpha = 0.8) +
-  scale_color_manual(values = diff_colors) +
-  geom_hline(yintercept = 0, linetype = "dashed", colour = "black", linewidth = 0.3) +
-  geom_vline(xintercept = 0, linetype = "dashed", colour = "black", linewidth = 0.3) +
-  labs(
-    x = "Mean difference (CM)",
-    y = "Mean difference (EM)",
-    color = "Differential status"
-  ) +
-  theme_classic(base_size = 13) +
-  theme(legend.position = "top") +
-  annotate("text",
-    x = Inf, y = Inf, label = paste0("r = ", round(cor_val, 2)),
-    hjust = 1.1, vjust = 1.5, size = 4.5, fontface = "bold"
-  ) +
-  geom_text_repel(
-    data = comb_df[!is.na(comb_df$label), ],
-    aes(label = label, color = isDiff),
-    size = 5, box.padding = 0.3, point.padding = 0.3,
-    max.overlaps = Inf, segment.color = NA
-  )
-
-file <- file.path(plot.dir, "mean_difference_em_vs_cm_memTcells.pdf")
-ggsave(file, p, width = 10, height = 10)
-log_info("Wrote ", file)
-
-#####################################################################
 # LOLA: volcano plots, and enrichment against the methylTFR difference
 #####################################################################
 
@@ -786,6 +615,7 @@ if (!file.exists(lola.file)) {
           label = paste0(nm, "_vs_", comparisons[[nm]]$ref),
           grp1 = hit$grp1, grp2 = hit$grp2,
           n.label = top.label.lola,
+          motifs = lola.label.motifs,
           userSets = lola.userSets,
           cell_colors = cell_type_colors
         )

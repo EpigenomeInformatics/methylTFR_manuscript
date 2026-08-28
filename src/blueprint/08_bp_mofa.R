@@ -35,9 +35,13 @@ set.seed(12)
 use_python(Sys.which("python"), required = TRUE)
 motifSet <- "jaspar2020_distal"
 
-# Cell type groups excluded from the figures. Only the "other" catch all
-# is dropped, plasma is kept and shown.
-drop.cell.types <- "Other"
+# Cell type groups excluded from the figures. Plasma is kept and shown.
+drop.cell.types <- c("Other", "Thymocyte")
+
+# Motifs given an expression against deviation scatter. NULL takes the
+# most variable motifs of the paired heatmap.
+scatter.tfs <- NULL
+scatter.n <- 12
 
 num.factors <- 14
 top.factors <- 7 # factors carried into the strip plot
@@ -109,10 +113,12 @@ map.file <- file.path(mofa.dir, "bp_rna_wgbs_map.tsv")
 model.hdf5 <- file.path(mofa.dir, "mtfr_expr_model_bp.hdf5")
 model.rds <- file.path(mofa.dir, "mtfr_expr_model_bp.rds")
 
-plot.dir <- file.path(analysis.dir, "mofa_figures_230826")
+# Figures live in the repository, next to the tables they belong with
+github.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript"
+plot.dir <- file.path(github.dir, "figures", "blueprint", "mofa_230826")
 if (!dir.exists(plot.dir)) dir.create(plot.dir, recursive = TRUE)
 
-table.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/tables"
+table.dir <- file.path(github.dir, "tables")
 if (!dir.exists(table.dir)) dir.create(table.dir, recursive = TRUE)
 
 selex.file <- "/icbb/projects/igunduz/exposure_atlas_manuscript/sample_annots/Selex_data.csv"
@@ -300,6 +306,7 @@ scatter_plot <- function(f_x, f_y) {
     theme(legend.position = "right")
 }
 
+scatter_panels <- list()
 for (pr in pairs) {
   missing_f <- setdiff(pr, available)
   if (length(missing_f) > 0) {
@@ -308,6 +315,7 @@ for (pr in pairs) {
     next
   }
   p_scatter <- scatter_plot(pr[1], pr[2])
+  scatter_panels[[paste(pr, collapse = "_")]] <- p_scatter
   file <- file.path(plot.dir, paste0("factor_scatter_", pr[1], "_", pr[2], ".pdf"))
   # The object name was misspelled here, so this figure never rendered
   ggsave(file, plot = p_scatter, width = 7, height = 5)
@@ -407,9 +415,8 @@ topTfs <- lapply(r2_df$Factor[seq_len(n_factors_tf)], function(f) {
 
 write.csv(topTfs, file.path(table.dir, "mofa_bp_topTFs.csv"), row.names = FALSE)
 log_info(length(unique(topTfs$feature)), " unique features across the top factors")
-
 #####################################################################
-# Paired heatmaps of the MOFA features
+# Paired heatmap of the MOFA features
 #####################################################################
 
 mofa_tfs <- unique(topTfs$feature)
@@ -429,61 +436,22 @@ mtfr_heatmap <- mtfr_z[common_TFs, heat_samples, drop = FALSE]
 rna_heatmap <- rna_z[common_TFs, heat_samples, drop = FALSE]
 
 present <- intersect(names(cell_type_colors), unique(heat_groups))
-ha <- HeatmapAnnotation(
-  celltypes = heat_groups,
-  col = list(celltypes = cell_type_colors[present])
-)
 column_split_factor <- factor(heat_groups, levels = intersect(column.order, unique(heat_groups)))
 
-heatmap_mtfr <- Heatmap(
-  mtfr_heatmap,
-  name = "mTFR Z-score",
-  row_names_gp = gpar(fontsize = 4),
-  top_annotation = ha,
-  column_title = "methylTFR Z-scores of the MOFA TFs",
-  show_row_names = TRUE,
-  show_column_names = FALSE,
-  column_split = column_split_factor,
-  cluster_column_slices = FALSE
-)
-
-file <- file.path(plot.dir, "heatmap_mofa_mtfr_bp.pdf")
-pdf(file, width = 8, height = 10)
-ht_mtfr <- draw(heatmap_mtfr)
-dev.off()
-log_info("Wrote ", file)
-
-# Row order taken from the drawn object, so the expression heatmap and the
-# annotation columns line up with it
-row_order_indices <- row_order(ht_mtfr)
-if (is.list(row_order_indices)) row_order_indices <- unlist(row_order_indices, use.names = FALSE)
-row_order_names <- rownames(mtfr_heatmap)[row_order_indices]
-
-col_fun_expr <- colorRamp2(seq(-2, 2, length.out = 11), brewer.pal(11, "PRGn"))
-
-file <- file.path(plot.dir, "heatmap_mofa_expr_bp.pdf")
-pdf(file, width = 8, height = 10)
-draw(Heatmap(
-  rna_heatmap,
-  name = "RNA Z-score",
-  row_names_gp = gpar(fontsize = 4),
-  top_annotation = ha,
-  column_title = "RNA Z-scores of the MOFA TFs",
-  show_row_names = TRUE,
-  show_column_names = FALSE,
-  column_split = column_split_factor,
-  cluster_column_slices = FALSE,
-  cluster_rows = FALSE,
-  row_order = row_order_indices,
-  col = col_fun_expr
-))
-dev.off()
-log_info("Wrote ", file)
+cell_annotation <- function() {
+  HeatmapAnnotation(
+    celltypes = heat_groups,
+    col = list(celltypes = cell_type_colors[present]),
+    annotation_name_gp = gpar(fontsize = 8),
+    show_legend = FALSE
+  )
+}
 
 #####################################################################
-# Row-wise correlation column
+# The three annotation columns
 #####################################################################
 
+# Row-wise correlation between the two modalities
 row_correlation <- vapply(seq_len(nrow(mtfr_heatmap)), function(i) {
   suppressWarnings(cor(
     as.numeric(mtfr_heatmap[i, ]), as.numeric(rna_heatmap[i, ]),
@@ -491,116 +459,234 @@ row_correlation <- vapply(seq_len(nrow(mtfr_heatmap)), function(i) {
   ))
 }, numeric(1))
 row_correlation[!is.finite(row_correlation)] <- 0
-correlation_matrix <- matrix(row_correlation,
-  ncol = 1, dimnames = list(rownames(mtfr_heatmap), "Correlation")
-)
+names(row_correlation) <- rownames(mtfr_heatmap)
 
-col_fun_cor <- colorRamp2(
-  seq(-1, 1, length.out = 11), rev(brewer.pal(11, "PiYG"))
-)
+col_fun_cor <- colorRamp2(seq(-1, 1, length.out = 11), rev(brewer.pal(11, "PiYG")))
 
-file <- file.path(plot.dir, "correlation_heatmap.pdf")
-pdf(file, width = 3, height = 10)
-draw(Heatmap(
-  correlation_matrix,
-  name = "Row Correlation",
-  cluster_rows = FALSE,
-  cluster_columns = FALSE,
-  show_row_names = TRUE,
-  row_names_gp = gpar(fontsize = 4),
-  col = col_fun_cor,
-  row_order = row_order_indices
-))
-dev.off()
-log_info("Wrote ", file)
-
-#####################################################################
-# Factor annotation column
-#####################################################################
-
-# One factor per feature, then aligned to the heatmap rows. The old version
-# matched against mtfr_filtered, an object that was never created.
+# The factor a feature carries its largest weight on
 mofa_filt <- topTfs[!duplicated(topTfs$feature), ]
 mofa_filt <- mofa_filt[match(rownames(mtfr_heatmap), mofa_filt$feature), ]
 mofa_filt$factor[is.na(mofa_filt$factor)] <- "none"
+factor_vec <- mofa_filt$factor
 
-factor_levels <- sort(unique(mofa_filt$factor))
-level_col <- setNames(
-  colorRampPalette(brewer.pal(max(3, min(9, length(factor_levels))), "Set1"))(length(factor_levels)),
+factor_levels <- sort(unique(factor_vec))
+factor_col_map <- setNames(
+  colorRampPalette(brewer.pal(max(3, min(9, length(factor_levels))), "Set1"))(
+    length(factor_levels)
+  ),
   factor_levels
 )
 
-file <- file.path(plot.dir, "factor_column.pdf")
-pdf(file, width = 2.2, height = 10)
-draw(Heatmap(
-  as.matrix(mofa_filt$factor),
-  name = "Factors",
-  cluster_rows = FALSE,
-  cluster_columns = FALSE,
-  show_row_names = FALSE,
-  show_column_names = FALSE,
-  row_order = row_order_indices,
-  col = level_col
-))
-dev.off()
-log_info("Wrote ", file)
-
-#####################################################################
-# SELEX annotation
-#####################################################################
+# The methyl-SELEX call of each motif. Read here rather than further down,
+# because it is one of the annotation columns of the heatmap below.
+selex_tab <- NULL
+selex_call <- NULL
+call_col <- name_col <- NULL
 
 if (!file.exists(selex.file)) {
-  log_warn("SELEX table not found, skipping the SELEX panels: ", selex.file)
+  log_warn("SELEX table not found, the SELEX column is skipped: ", selex.file)
 } else {
-  selex <- read.csv(selex.file, skip = 20, header = TRUE, sep = ";")
-
-  # The old script used selex$Call in one place and
-  # selex$methyl.SELEX.call in another, so one of the two was always NULL
+  selex_tab <- read.csv(selex.file, skip = 20, header = TRUE, sep = ";")
   call_col <- intersect(
-    c("methyl.SELEX.call", "Call", "methylSELEXcall"), colnames(selex)
+    c("methyl.SELEX.call", "Call", "methylSELEXcall"), colnames(selex_tab)
   )
-  name_col <- intersect(c("TF.name", "TF", "TFname"), colnames(selex))
+  name_col <- intersect(c("TF.name", "TF", "TFname"), colnames(selex_tab))
+
   if (length(call_col) == 0 || length(name_col) == 0) {
     log_warn(
       "No SELEX call or TF name column. Present: ",
-      paste(colnames(selex), collapse = ", ")
+      paste(colnames(selex_tab), collapse = ", ")
     )
+    selex_tab <- NULL
   } else {
     call_col <- call_col[1]
     name_col <- name_col[1]
     log_info("SELEX columns: name = ", name_col, ", call = ", call_col)
 
-    motifs <- rownames(mtfr_heatmap)
-    idx <- match(motifs, selex[[name_col]])
-    selex_call <- ifelse(is.na(idx), "Inconclusive", as.character(selex[[call_col]][idx]))
+    # A motif with no entry is not missing data, it was never assayed, so
+    # it is labelled Inconclusive rather than left blank
+    idx <- match(rownames(mtfr_heatmap), selex_tab[[name_col]])
+    selex_call <- ifelse(is.na(idx), "Inconclusive", as.character(selex_tab[[call_col]][idx]))
     selex_call[is.na(selex_call)] <- "Inconclusive"
-
-    call_levels <- sort(unique(selex_call))
-    call_col_map <- setNames(
-      colorRampPalette(c("#CCCCCC", "#BDB76B", "#8B0000", "#008080"))(length(call_levels)),
-      call_levels
+    log_info(
+      "SELEX calls on the heatmap: ",
+      paste(names(table(selex_call)), table(selex_call), sep = " = ", collapse = ", ")
     )
+  }
+}
 
-    file <- file.path(plot.dir, "selex_annotation_heatmap.pdf")
-    pdf(file, width = 2.5, height = 10)
-    draw(Heatmap(
-      as.matrix(selex_call),
-      name = "SELEX Call",
-      cluster_rows = FALSE,
-      cluster_columns = FALSE,
-      show_row_names = FALSE,
-      show_column_names = FALSE,
-      row_order = row_order_indices,
-      col = call_col_map,
-      width = unit(1, "cm")
-    ))
-    dev.off()
-    log_info("Wrote ", file)
+selex_col_map <- NULL
+if (!is.null(selex_call)) {
+  # Fixed colours per call, so the same call reads the same in every figure
+  known <- c(
+    "Inconclusive" = "#D9D9D9",
+    "Little effect" = "#BDB76B",
+    "MethylMinus" = "#8B0000",
+    "MethylPlus" = "#008080"
+  )
+  extra <- setdiff(unique(selex_call), names(known))
+  if (length(extra) > 0) {
+    log_warn("Unlisted SELEX call(s), coloured grey: ", paste(extra, collapse = ", "))
+    known <- c(known, setNames(rep("#8C8C8C", length(extra)), extra))
+  }
+  selex_col_map <- known[intersect(names(known), unique(selex_call))]
+}
 
-    ###################################################################
-    # Correlation by SELEX call, over every shared feature
-    ###################################################################
+#####################################################################
+# Panel D, both modalities and the annotation columns in one drawing
+#####################################################################
 
+heatmap_mtfr <- Heatmap(
+  mtfr_heatmap,
+  name = "methylTFR\nZ-scores",
+  col = colorRamp2(c(-4, -2, 0, 2, 4), c("#2A2F9E", "#7570B3", "#FFFFFF", "#F16C43", "#E03426")),
+  top_annotation = cell_annotation(),
+  column_split = column_split_factor,
+  cluster_column_slices = FALSE,
+  column_gap = unit(0.8, "mm"),
+  cluster_rows = TRUE,
+  show_row_names = FALSE,
+  show_column_names = FALSE,
+  row_dend_side = "left",
+  column_title = "methylTFR",
+  column_title_gp = gpar(fontsize = 9)
+)
+
+heatmap_expr <- Heatmap(
+  rna_heatmap,
+  name = "TF expression\nZ-scores",
+  col = colorRamp2(seq(-2, 2, length.out = 11), brewer.pal(11, "PRGn")),
+  top_annotation = cell_annotation(),
+  column_split = column_split_factor,
+  cluster_column_slices = FALSE,
+  column_gap = unit(0.8, "mm"),
+  cluster_rows = FALSE, # the row order comes from the methylTFR half
+  show_row_names = FALSE,
+  show_column_names = FALSE,
+  column_title = "TF expression",
+  column_title_gp = gpar(fontsize = 9)
+)
+
+# Concatenating with + makes the second heatmap and every annotation follow
+# the row order of the first, so no row order has to be carried by hand
+annotation_args <- list(
+  Factors = factor_vec,
+  `Row-wise Pearson Correlation` = row_correlation,
+  col = list(
+    Factors = factor_col_map,
+    `Row-wise Pearson Correlation` = col_fun_cor
+  ),
+  annotation_name_gp = gpar(fontsize = 7),
+  width = unit(30, "mm")
+)
+if (!is.null(selex_call)) {
+  annotation_args[["SELEX Call"]] <- selex_call
+  annotation_args$col[["SELEX Call"]] <- selex_col_map
+}
+# which = "row" is passed explicitly: rowAnnotation normally infers it from
+# its own call, but do.call evaluates anno_text() before that happens
+annotation_args$TF <- anno_text(
+  rownames(mtfr_heatmap),
+  gp = gpar(fontsize = 6), which = "row"
+)
+
+ha_right <- do.call(rowAnnotation, annotation_args)
+
+panel_d <- grid.grabExpr(
+  draw(heatmap_mtfr + heatmap_expr + ha_right,
+    merge_legend = TRUE, heatmap_legend_side = "right"
+  )
+)
+
+file <- file.path(plot.dir, "heatmap_mofa_paired_bp.pdf")
+pdf(file, width = 15, height = 11)
+grid.draw(panel_d)
+dev.off()
+log_info("Wrote ", file)
+
+#####################################################################
+# TF expression against methylTFR deviation, per motif
+#####################################################################
+
+# Both matrices are already restricted to the paired samples and Z-scored,
+# so a point is one sample and the annotated r is the value the correlation
+# column of the heatmap shows.
+names(row_correlation) <- rownames(mtfr_heatmap)
+
+scatter_motifs <- if (is.null(scatter.tfs)) {
+  # The motifs where the two modalities have most to say, by the spread of
+  # the methylTFR side rather than by correlation, so a flat motif with an
+  # accidentally high r does not take a panel
+  spread <- apply(mtfr_heatmap, 1, sd, na.rm = TRUE)
+  names(sort(spread, decreasing = TRUE))[seq_len(min(scatter.n, length(spread)))]
+} else {
+  intersect(scatter.tfs, rownames(mtfr_heatmap))
+}
+
+absent_scatter <- setdiff(
+  if (is.null(scatter.tfs)) character(0) else scatter.tfs,
+  rownames(mtfr_heatmap)
+)
+if (length(absent_scatter) > 0) {
+  log_warn(
+    length(absent_scatter), " motif(s) are not on the paired heatmap, no scatter: ",
+    paste(head(absent_scatter, 10), collapse = ", ")
+  )
+}
+
+plot_expr_scatter <- function(motif) {
+  df <- data.frame(
+    expression = as.numeric(rna_heatmap[motif, ]),
+    deviation = as.numeric(mtfr_heatmap[motif, ]),
+    celltype = factor(heat_groups, levels = cell_type_levels),
+    stringsAsFactors = FALSE
+  )
+  r <- row_correlation[[motif]]
+
+  ggplot(df, aes(x = expression, y = deviation)) +
+    geom_smooth(method = "lm", formula = y ~ x, colour = "grey40", se = FALSE, linewidth = 0.6) +
+    geom_point(aes(colour = celltype), size = 2, alpha = 0.9) +
+    scale_colour_manual(values = cell_type_colors, name = "Cell type", drop = TRUE) +
+    annotate("text",
+      x = Inf, y = Inf, hjust = 1.05, vjust = 1.4, size = 3.6,
+      label = paste0("r = ", format(round(r, 2), nsmall = 2))
+    ) +
+    labs(title = motif, x = "TF expression Z-score", y = "methylTFR Z-score") +
+    theme_classic(base_size = 12) +
+    theme(plot.title = element_text(hjust = 0, face = "plain"))
+}
+
+if (length(scatter_motifs) == 0) {
+  log_warn("No motif could be scattered")
+} else if (!requireNamespace("patchwork", quietly = TRUE)) {
+  log_warn("patchwork is not installed, the scatter panel is skipped")
+} else {
+  # One page only, the panels are not written individually as well
+  panels <- lapply(scatter_motifs, plot_expr_scatter)
+  combined <- patchwork::wrap_plots(panels, ncol = 3, guides = "collect")
+  file <- file.path(plot.dir, "scatter_expr_vs_mtfr_panels_bp.pdf")
+  ggsave(file, combined,
+    width = 15, height = 4 * ceiling(length(scatter_motifs) / 3)
+  )
+  log_info("Wrote ", file, " for ", length(scatter_motifs), " motifs")
+
+  write.csv(
+    data.frame(
+      motif = rownames(mtfr_heatmap),
+      correlation = unname(row_correlation),
+      stringsAsFactors = FALSE
+    ),
+    file.path(table.dir, "bp_expr_vs_mtfr_correlation.csv"),
+    row.names = FALSE
+  )
+}
+#####################################################################
+# Correlation by SELEX call, over every shared feature
+#####################################################################
+
+if (is.null(selex_tab)) {
+  log_warn("No SELEX table, the correlation boxplot is skipped")
+} else {
     # Computed on the aligned Z-score matrices, not on the deviations
     # object and the raw counts, which have neither the same rows nor the
     # same class
@@ -618,7 +704,7 @@ if (!file.exists(selex.file)) {
       stringsAsFactors = FALSE
     )
     cor_df <- cor_df[is.finite(cor_df$Correlation), ]
-    cor_df$call <- selex[[call_col]][match(cor_df$TF.name, selex[[name_col]])]
+    cor_df$call <- selex_tab[[call_col]][match(cor_df$TF.name, selex_tab[[name_col]])]
     cor_df <- cor_df[cor_df$call %in% c("MethylPlus", "MethylMinus"), ]
 
     if (nrow(cor_df) == 0) {
@@ -653,7 +739,6 @@ if (!file.exists(selex.file)) {
         row.names = FALSE
       )
     }
-  }
 }
 
 #####################################################################
@@ -664,3 +749,39 @@ write.csv(agg, file.path(table.dir, "mofa_bp_modality_contribution.csv"), row.na
 write.csv(weights_df, file.path(table.dir, "mofa_bp_weights_long.csv"), row.names = FALSE)
 
 log_success("Finished the Blueprint MOFA integration, figures in ", plot.dir)
+
+#####################################################################
+# The assembled figure
+#####################################################################
+
+# A the modality contribution, B the factor values, C the factor
+# scatters, D the paired heatmap. D is a ComplexHeatmap, so it travels as
+# the grob captured above rather than as a ggplot.
+if (!requireNamespace("patchwork", quietly = TRUE)) {
+  log_warn("patchwork is not installed, the assembled figure is skipped")
+} else {
+  panel_c <- if (length(scatter_panels) == 0) {
+    NULL
+  } else if (length(scatter_panels) == 1) {
+    scatter_panels[[1]]
+  } else {
+    patchwork::wrap_plots(scatter_panels, nrow = 1, guides = "collect") &
+      ggplot2::theme(legend.position = "none")
+  }
+
+  top <- p_modality_frac
+  mid <- if (is.null(panel_c)) {
+    p_strip
+  } else {
+    patchwork::wrap_plots(p_strip, panel_c, ncol = 2, widths = c(1, 1))
+  }
+
+  combined <- patchwork::wrap_plots(
+    top, mid, patchwork::wrap_elements(full = panel_d),
+    ncol = 1, heights = c(1, 1.1, 2.4)
+  ) + patchwork::plot_annotation(tag_levels = "A")
+
+  file <- file.path(plot.dir, "figure_bp_mofa_integration.pdf")
+  ggsave(file, combined, width = 16, height = 22, limitsize = FALSE)
+  log_info("Wrote ", file)
+}

@@ -63,10 +63,12 @@ selex.file <- "/icbb/projects/igunduz/exposure_atlas_manuscript/sample_annots/Se
 selex.groups <- c("MethylMinus", "MethylPlus")
 
 # Directories
-plot.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/echo/integration_figures_230826"
+# Figures live in the repository, next to the tables they belong with
+github.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript"
+plot.dir <- file.path(github.dir, "figures", "echo", "integration_230826")
 if (!dir.exists(plot.dir)) dir.create(plot.dir, recursive = TRUE)
 
-table.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/tables"
+table.dir <- file.path(github.dir, "tables")
 if (!dir.exists(table.dir)) dir.create(table.dir, recursive = TRUE)
 
 # Palettes
@@ -84,10 +86,13 @@ mtfr_colors <- colorRamp2(
   c(-4, -2, 0, 2, 4),
   c("#2A2F9E", "#7570B3", "#FFFFFF", "#F16C43", "#E03426")
 )
-# Approximated from the figure, a sequential green rather than diverging
+# Diverging, teal for a depleted motif and gold for an enriched one, on a
+# symmetric -5 to 5 scale. Sequential would have read a strong depletion
+# and a value near zero as the same pale colour.
+chromvar_limit <- 5
 chromvar_colors <- colorRamp2(
-  c(-2, 0, 2, 4),
-  c("#F7FCF5", "#E5F5E0", "#41AE76", "#00441B")
+  seq(-chromvar_limit, chromvar_limit, length.out = 11),
+  rev(brewer.pal(11, "BrBG"))
 )
 cor_colors <- colorRamp2(
   c(-1, -0.5, 0, 0.5, 1),
@@ -275,6 +280,7 @@ ht_mtfr <- Heatmap(mtfr_heat,
 ht_chromvar <- Heatmap(chromvar_heat,
   name = "chromVAR\nZ-scores",
   col = chromvar_colors,
+  heatmap_legend_param = list(at = seq(-chromvar_limit, chromvar_limit, by = 2)),
   top_annotation = cell_annotation(),
   column_split = split_factor,
   cluster_columns = TRUE,
@@ -350,18 +356,15 @@ missing_scatter <- setdiff(scatter.tfs, available_tfs)
 if (length(missing_scatter) > 0) {
   log_warn("Not in both matrices, no scatter: ", paste(missing_scatter, collapse = ", "))
 }
-for (tf in available_tfs) {
-  file <- file.path(plot.dir, paste0("scatter_chromvar_vs_mtfr_", tf, ".pdf"))
-  ggsave(file, plot_tf_scatter(tf), width = 5.5, height = 4.5)
-  log_info("Wrote ", file)
-}
-
-# The same panels on one page, as in the supplement
-if (length(available_tfs) > 1 && requireNamespace("patchwork", quietly = TRUE)) {
+# One page for the whole set. The panels are not written individually as
+# well, the combined figure is the one that goes into the manuscript.
+if (length(available_tfs) > 0) {
   panels <- lapply(available_tfs, plot_tf_scatter)
   combined <- patchwork::wrap_plots(panels, ncol = 2, guides = "collect")
   file <- file.path(plot.dir, "scatter_chromvar_vs_mtfr_panels.pdf")
-  ggsave(file, combined, width = 11, height = 9)
+  ggsave(file, combined,
+    width = 11, height = 4.5 * ceiling(length(available_tfs) / 2)
+  )
   log_info("Wrote ", file)
 }
 

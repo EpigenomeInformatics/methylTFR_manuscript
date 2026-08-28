@@ -47,7 +47,9 @@ cell_type_colors <- c(
 analysis.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/memoryTcells"
 dev.tag <- "mTFR_devs_230826"
 
-fig.dir <- file.path(analysis.dir, "figures_230826")
+# Figures live in the repository, next to the tables they belong with
+github.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript"
+fig.dir <- file.path(github.dir, "figures", "memtcells", "pca_230826")
 if (!dir.exists(fig.dir)) dir.create(fig.dir, recursive = TRUE)
 
 #####################################################################
