@@ -93,6 +93,17 @@ selex.file <- "/icbb/projects/igunduz/exposure_atlas_manuscript/sample_annots/Se
 selex.groups <- c("MethylMinus", "MethylPlus")
 selex_colors <- c("MethylMinus" = "#8B1A1A", "MethylPlus" = "#1B6B3A")
 
+# Illustrator sees every opaque panel, plot and legend background as its own
+# white rectangle to select and delete, so none of them are drawn
+no_bg <- theme(
+  plot.background = element_blank(),
+  panel.background = element_blank(),
+  legend.background = element_blank(),
+  legend.box.background = element_blank(),
+  legend.key = element_blank(),
+  strip.background = element_blank()
+)
+
 # Directories
 analysis.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/blueprint"
 dev.tag <- "mTFR_devs_230826"
@@ -329,7 +340,7 @@ p_modality_frac <- ggplot(agg, aes(x = factor, y = frac)) +
   )
 
 ggsave(file.path(plot.dir, "viper_modality_contribution_fraction_R2.pdf"),
-  plot = p_modality_frac, width = 11, height = 4.5
+  plot = p_modality_frac & no_bg, width = 11, height = 4.5, bg = "transparent"
 )
 
 #####################################################################
@@ -349,7 +360,7 @@ p_strip <- ggplot(factors_top, aes(x = factor, y = value, color = celltype)) +
   theme(panel.grid.major.x = element_blank())
 
 ggsave(file.path(plot.dir, "viper_factors_stripplot_by_celltype.pdf"),
-  plot = p_strip, width = 9, height = 5
+  plot = p_strip & no_bg, width = 9, height = 5, bg = "transparent"
 )
 
 #####################################################################
@@ -396,7 +407,7 @@ for (pr in pairs) {
   p_scatter <- scatter_plot(pr[1], pr[2])
   scatter_panels[[paste(pr, collapse = "_")]] <- p_scatter
   file <- file.path(plot.dir, paste0("factor_scatter_", pr[1], "_", pr[2], ".pdf"))
-  ggsave(file, p_scatter, width = 7, height = 5)
+  ggsave(file, p_scatter & no_bg, width = 7, height = 5, bg = "transparent")
   log_info("Wrote ", file)
 }
 
@@ -646,7 +657,7 @@ if (nrow(cor_sel) == 0) {
 
     tests$x1 <- match(tests$group1, groups_present)
     tests$x2 <- match(tests$group2, groups_present)
-    tests$y <- 0.78 + (seq_len(nrow(tests)) - 1) * 0.16
+    tests$y <- 0.72 + (seq_len(nrow(tests)) - 1) * 0.16
     tests$label <- ifelse(is.na(tests$p_adjusted), "n.a.",
       paste0("p.adj = ", format.pval(tests$p_adjusted, digits = 2, eps = 1e-16))
     )
@@ -658,7 +669,8 @@ if (nrow(cor_sel) == 0) {
     geom_jitter(aes(color = selex_call), width = 0.2, size = 1.2, alpha = 0.7) +
     scale_fill_manual(values = selex_colors) +
     scale_color_manual(values = selex_colors) +
-    scale_y_continuous(limits = c(-1, 1.1), breaks = seq(-1, 1, 0.2)) +
+    scale_y_continuous(breaks = seq(-1, 1, 0.2)) +
+    coord_cartesian(ylim = c(-1, 1.12), clip = "off") +
     geom_text(
       data = selex_counts, inherit.aes = FALSE,
       aes(x = selex_call, y = 1.06, label = count), vjust = 0, size = 4.5
@@ -683,12 +695,13 @@ if (nrow(cor_sel) == 0) {
       ) +
       geom_text(
         data = tests, inherit.aes = FALSE,
-        aes(x = (x1 + x2) / 2, y = y + 0.02, label = label), vjust = 0, size = 3.8
+        aes(x = (x1 + x2) / 2, y = y + 0.02, label = label),
+        vjust = 0, size = 3.8, fontface = "bold"
       )
   }
 
   file <- file.path(plot.dir, "correlation_boxplot_by_selex_bp.pdf")
-  ggsave(file, p_selex, width = 5.5, height = 6)
+  ggsave(file, p_selex & no_bg, width = 5.5, height = 6, bg = "transparent")
   log_info("Wrote ", file)
 }
 
@@ -820,7 +833,7 @@ panel_heat <- grid.grabExpr(
 )
 
 file <- file.path(plot.dir, "heatmap_mtfr_viper_bp.pdf")
-pdf(file, width = 15, height = 11)
+pdf(file, width = 15, height = 11, bg = "transparent")
 grid.draw(panel_heat)
 dev.off()
 log_info("Wrote ", file)
@@ -844,7 +857,7 @@ row_cd <- lapply(scatter_panels, function(p) p + theme(legend.position = "none")
 cd_widths <- rep(1, length(row_cd))
 if (!is.null(p_selex)) {
   row_cd <- c(row_cd, list(p_selex + labs(tag = "D")))
-  cd_widths <- c(cd_widths, 0.8)
+  cd_widths <- c(cd_widths, 1)
 }
 row_cd <- wrap_plots(row_cd, nrow = 1, widths = cd_widths)
 
@@ -855,7 +868,7 @@ combined <- wrap_plots(row_ab, row_cd, row_e, ncol = 1, heights = c(1, 1.1, 2.6)
   theme(plot.tag = element_text(face = "bold", size = 16))
 
 file <- file.path(plot.dir, "figure_bp_viper_mofa_integration.pdf")
-ggsave(file, combined, width = 18, height = 20, limitsize = FALSE)
+ggsave(file, combined & no_bg, width = 18, height = 20, bg = "transparent", limitsize = FALSE)
 log_info("Wrote ", file)
 
 log_success("Finished the VIPER integration, figures in ", plot.dir)
