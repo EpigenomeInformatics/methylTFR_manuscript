@@ -5,8 +5,8 @@
 # created on 27-10-2025 by Irem B Gunduz
 # Updated by IBG on 23-08-2026
 # Differential TFs of the CD4 memory T cell subtypes:
-#   - paired heatmap of the methylTFR Z-scores and the matching TF
-#     gene expression, annotated with the row-wise correlation
+#   - paired heatmap of the methylTFR Z-scores and the matching VIPER
+#     TF activity, annotated with the row-wise correlation
 #   - LOLA volcano plots and LOLA against methylTFR
 #   - density scatter and MA plot of the RnBeads differential methylation
 #####################################################################
@@ -23,6 +23,7 @@ suppressPackageStartupMessages({
   library(muRtools)
   library(RnBeads)
   library(SummarizedExperiment)
+  library(viper)
   library(methylTFR)
 })
 set.seed(13)
@@ -59,6 +60,16 @@ heatmap.tfs <- c(
   "MNT", "FOSL2", "BHLHE40", "BATF", "FOS", "JUN", "RORA", "KLF6",
   "BCL6", "FOSL1", "JUND", "JUNB", "IRF7", "MYC", "GLIS3", "IRF4"
 )
+
+# VIPER. The right half of the paired heatmap is TF activity inferred from
+# the RNA rather than the expression of the TF gene itself, so a factor
+# whose own transcript barely moves can still show a shifted regulon.
+# Settings match 07b of the Blueprint pipeline.
+dorothea.confidence <- c("A", "B", "C")
+viper.method <- "scale"
+viper.minsize <- 4
+viper.eset.filter <- FALSE
+viper.cores <- 1
 
 # Significance cuts of the LOLA against methylTFR panel, one per assay
 cut.padj.mtfr <- 0.05 # methylTFR significance
@@ -124,7 +135,7 @@ mtfr_colors <- colorRamp2(
   c(-2, -1, 0, 1, 2),
   c("#2A2F9E", "#7570B3", "#FFFFFF", "#F16C43", "#E03426")
 )
-gex_colors <- colorRamp2(
+viper_colors <- colorRamp2(
   c(-2, -1, 0, 1, 2),
   c("#40004B", "#9970AB", "#FFFFFF", "#5AAE61", "#00441B")
 )
@@ -167,6 +178,7 @@ diffmeth.dir <- file.path(
   "differential_rnbDiffMeth"
 )
 lola.file <- file.path(diffmeth.dir, "TF_motifs_lola.rds")
+viper.out <- file.path(analysis.dir, "memT_viper_activity.RDS")
 
 rna.dir <- "/icbb/projects/share/datasets/memoryTcells/rna_raw_081025"
 meth.dir <- "/icbb/projects/share/datasets/memoryTcells"
@@ -463,17 +475,66 @@ colnames(expr) <- clean_gex_names(colnames(expr))
 gex_cell_types <- sub("^.*_", "", colnames(expr))
 expr <- expr[, !gex_cell_types %in% drop.cell.types, drop = FALSE]
 
-# Only the motifs that are plain gene symbols have an expression row.
-# Dimer motifs such as FOSL1::JUND cannot be matched and are reported.
-tf_expr <- expr[rownames(expr) %in% rownames(zscores_top), , drop = FALSE]
+#####################################################################
+# VIPER activity from the same expression matrix
+#####################################################################
+
+rna <- as.matrix(expr)
+keep <- rowSums(rna, na.rm = TRUE) > 0
+if (any(!keep)) log_info("Dropping ", sum(!keep), " genes with no counts")
+rna <- rna[keep, , drop = FALSE]
+
+lib_size <- colSums(rna, na.rm = TRUE)
+if (any(lib_size == 0)) {
+  stop("Sample(s) with an empty library: ",
+    paste(colnames(rna)[lib_size == 0], collapse = ", "))
+}
+rna <- log2(t(t(rna) / lib_size) * 1e6 + 1)
+
+# viper scores a gene against its spread across samples, so a gene with no
+# variance cannot contribute and makes the scaling undefined
+row_sd <- apply(rna, 1, stats::sd, na.rm = TRUE)
+rna <- rna[is.finite(row_sd) & row_sd > 0, , drop = FALSE]
+log_info("Expression into viper: ", nrow(rna), " genes x ", ncol(rna), " samples")
+
+utils::data("dorothea_hs", package = "dorothea", envir = environment())
+dorothea_hs <- get("dorothea_hs", envir = environment())
+net <- dorothea_hs[dorothea_hs$confidence %in% dorothea.confidence, ]
+regulon <- dorothea::df2regulon(net)
+if (length(regulon) == 0) stop("The regulon is empty")
+
+measured <- vapply(regulon, function(r) sum(names(r$tfmode) %in% rownames(rna)), numeric(1))
+log_info(
+  sum(measured >= viper.minsize), " of ", length(regulon),
+  " TFs have at least ", viper.minsize, " measured targets"
+)
+if (sum(measured >= viper.minsize) == 0) {
+  stop(
+    "No TF reaches minsize. The counts use '", rownames(rna)[1],
+    "', the regulon targets look like '", names(regulon[[1]]$tfmode)[1], "'."
+  )
+}
+
+activity <- as.matrix(viper(
+  eset = rna, regulon = regulon, method = viper.method,
+  minsize = viper.minsize, eset.filter = viper.eset.filter,
+  cores = viper.cores, verbose = FALSE
+))
+log_info("VIPER activity: ", nrow(activity), " TFs x ", ncol(activity), " samples")
+saveRDS(activity, viper.out)
+log_info("Wrote ", viper.out)
+
+# Only the motifs that are plain gene symbols have a VIPER row. Dimer motifs
+# such as FOSL1::JUND cannot be matched and are reported.
+tf_expr <- activity[rownames(activity) %in% rownames(zscores_top), , drop = FALSE]
 unmatched <- setdiff(rownames(zscores_top), rownames(tf_expr))
 if (length(unmatched) > 0) {
-  log_warn(length(unmatched), " motifs have no expression row and are dropped ",
+  log_warn(length(unmatched), " motifs have no VIPER activity and are dropped ",
     "from the paired heatmap: ", paste(head(unmatched, 10), collapse = ", "),
     if (length(unmatched) > 10) ", ..." else "")
 }
 if (nrow(tf_expr) < 2) {
-  stop("Fewer than two motifs could be matched to gene expression")
+  stop("Fewer than two motifs could be matched to a VIPER activity")
 }
 tf_expr_z <- row_zscore(tf_expr)
 
@@ -541,8 +602,8 @@ ht_mtfr <- Heatmap(mtfr_mat,
 )
 
 ht_gex <- Heatmap(gex_mat,
-  name = "TF expression\nZ-scores",
-  col = gex_colors,
+  name = "VIPER\nZ-scores",
+  col = viper_colors,
   top_annotation = cell_type_annotation(gex_types),
   column_split = gex_split,
   cluster_columns = TRUE,
@@ -563,7 +624,7 @@ ha_cor <- rowAnnotation(
   width = unit(30, "mm")
 )
 
-file <- file.path(plot.dir, "paired_heatmap_mtfr_gex_memTcells.pdf")
+file <- file.path(plot.dir, "paired_heatmap_mtfr_viper_memTcells.pdf")
 pdf(file, width = 13, height = 11)
 draw(ht_mtfr + ht_gex + ha_cor,
   merge_legend = TRUE,

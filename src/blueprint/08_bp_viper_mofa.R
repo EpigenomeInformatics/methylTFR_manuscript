@@ -744,8 +744,8 @@ ht_mtfr <- Heatmap(
   show_row_names = FALSE,
   show_column_names = FALSE,
   row_dend_side = "left",
-  column_title = "methylTFR",
-  column_title_gp = gpar(fontsize = 8)
+  column_title_rot = 45,
+  column_title_gp = gpar(fontsize = 7)
 )
 
 ht_viper <- Heatmap(
@@ -759,8 +759,8 @@ ht_viper <- Heatmap(
   cluster_rows = FALSE,
   show_row_names = FALSE,
   show_column_names = FALSE,
-  column_title = "VIPER",
-  column_title_gp = gpar(fontsize = 8)
+  column_title_rot = 45,
+  column_title_gp = gpar(fontsize = 7)
 )
 
 row_correlation <- vapply(seq_len(nrow(mtfr_heatmap)), function(i) {
