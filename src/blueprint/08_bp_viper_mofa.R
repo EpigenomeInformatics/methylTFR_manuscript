@@ -444,55 +444,73 @@ selex_call_of <- function(motifs) {
 }
 
 #####################################################################
+# Every motif that pairs with a VIPER activity
+#####################################################################
+
+viper_pairs <- match_motifs_to_viper(rownames(mtfr_view), rownames(viper_view))
+log_info(
+  nrow(viper_pairs), " motifs pair with a VIPER activity, ",
+  length(unique(viper_pairs$viper_tf)), " distinct TFs"
+)
+if (nrow(viper_pairs) < 2) stop("Fewer than two motifs pair with a VIPER activity")
+
+sig_motifs <- character(0)
+if (!file.exists(diff.file)) {
+  log_warn("Differential results not found, the differential flag stays empty: ", diff.file)
+} else {
+  diff <- readRDS(diff.file)
+  motif_col <- intersect(c("motifs", "motif", "feature"), colnames(diff))
+  if (length(motif_col) == 0) {
+    log_warn(
+      "No motif column in ", basename(diff.file),
+      ". Present: ", paste(colnames(diff), collapse = ", ")
+    )
+  } else {
+    diff$motif <- as.character(diff[[motif_col[1]]])
+    sig_motifs <- diff$motif[which(diff$p_value_adjusted < heatmap.padj.cutoff)]
+    log_info(length(sig_motifs), " motifs differential at adjusted p < ", heatmap.padj.cutoff)
+  }
+}
+
+#####################################################################
 # Rows of the paired heatmap
 #####################################################################
 
-if (!file.exists(diff.file)) {
-  stop("Differential results not found, run 06 first: ", diff.file)
+candidates <- weights_df %>%
+  filter(view == "mtfr", factor %in% top_factors, feature %in% viper_pairs$motif) %>%
+  left_join(viper_pairs, by = c("feature" = "motif"))
+
+# The strongest loadings of each top factor in turn. A motif and a VIPER TF
+# are taken once, so the factors do not repeat each other's rows and no
+# activity row is drawn twice.
+taken_motifs <- character(0)
+taken_tfs <- character(0)
+selected <- list()
+for (f in top_factors) {
+  ranked <- candidates %>%
+    filter(factor == f, !feature %in% taken_motifs, !viper_tf %in% taken_tfs) %>%
+    arrange(desc(value_abs)) %>%
+    head(heatmap.tfs.per.factor)
+  taken_motifs <- c(taken_motifs, ranked$feature)
+  taken_tfs <- c(taken_tfs, ranked$viper_tf)
+  selected[[f]] <- ranked
 }
-diff <- readRDS(diff.file)
-motif_col <- intersect(c("motifs", "motif", "feature"), colnames(diff))
-if (length(motif_col) == 0) {
-  stop(
-    "No motif column in ", basename(diff.file),
-    ". Present: ", paste(colnames(diff), collapse = ", ")
-  )
-}
-diff$motif <- as.character(diff[[motif_col[1]]])
-
-sig <- diff[which(diff$p_value_adjusted < heatmap.padj.cutoff), ]
-log_info(nrow(sig), " motifs differential at adjusted p < ", heatmap.padj.cutoff)
-if (nrow(sig) == 0) stop("No differential motif at the chosen cutoff")
-
-sig <- sig[sig$motif %in% rownames(mtfr_view), ]
-pairs_tab <- match_motifs_to_viper(sig$motif, rownames(viper_view))
-log_info(
-  nrow(pairs_tab), " of ", nrow(sig),
-  " differential motifs have a VIPER activity"
-)
-
-# Each motif is assigned to the factor it loads most strongly on, then the
-# strongest loadings of each top factor are kept, so no one factor or motif
-# family fills the heatmap
-selected <- mtfr_top_factor %>%
-  filter(feature %in% pairs_tab$motif, factor %in% top_factors) %>%
-  group_by(factor) %>%
-  slice_max(value_abs, n = heatmap.tfs.per.factor, with_ties = FALSE) %>%
-  ungroup() %>%
-  arrange(match(factor, top_factors), desc(value_abs))
+selected <- bind_rows(selected)
 
 log_info(
-  "Motifs per factor: ",
+  "Heatmap motifs per factor: ",
   paste(names(table(selected$factor)), table(selected$factor),
     sep = " = ", collapse = ", "
   )
 )
-if (nrow(selected) < 2) {
-  stop("Fewer than two differential motifs load on the top factors")
-}
+if (nrow(selected) < 2) stop("Fewer than two motifs could be selected for the heatmap")
 
-pairs_tab <- pairs_tab[match(selected$feature, pairs_tab$motif), ]
-pairs_tab$factor <- selected$factor
+pairs_tab <- data.frame(
+  motif = selected$feature,
+  viper_tf = selected$viper_tf,
+  factor = selected$factor,
+  stringsAsFactors = FALSE
+)
 
 n_dimer <- sum(grepl("::", pairs_tab$motif, fixed = TRUE))
 if (n_dimer > 0) {
@@ -516,15 +534,11 @@ column_split_factor <- factor(heat_groups, levels = intersect(column.order, uniq
 row_split_factor <- factor(pairs_tab$factor, levels = top_factors[top_factors %in% pairs_tab$factor])
 
 #####################################################################
-# The integration table: every top factor motif paired with a VIPER TF
+# The integration table: every motif / VIPER pair, over every factor
 #####################################################################
 
-factor_motifs <- intersect(
-  mtfr_top_factor$feature[mtfr_top_factor$factor %in% top_factors],
-  rownames(mtfr_view)
-)
-cor_tab <- match_motifs_to_viper(factor_motifs, rownames(viper_view))
-cor_tab$factor <- mtfr_top_factor$factor[match(cor_tab$motif, mtfr_top_factor$feature)]
+cor_tab <- viper_pairs
+cor_tab$top_factor <- mtfr_top_factor$factor[match(cor_tab$motif, mtfr_top_factor$feature)]
 cor_tab$weight_abs <- mtfr_top_factor$value_abs[match(cor_tab$motif, mtfr_top_factor$feature)]
 cor_tab$correlation <- vapply(seq_len(nrow(cor_tab)), function(i) {
   suppressWarnings(cor(
@@ -540,17 +554,25 @@ cor_tab$selex_call <- if (is.null(selex_calls)) {
 } else {
   selex_call_of(cor_tab$motif)
 }
-cor_tab$differential <- cor_tab$motif %in% sig$motif
+cor_tab$differential <- cor_tab$motif %in% sig_motifs
 cor_tab$in_heatmap <- cor_tab$motif %in% pairs_tab$motif
-cor_tab <- cor_tab[order(match(cor_tab$factor, top_factors), -cor_tab$weight_abs), ]
+cor_tab <- cor_tab[order(-cor_tab$weight_abs), ]
 
 write.csv(cor_tab, file.path(mixed.dir, "bp_mtfr_viper_integration.csv"),
   row.names = FALSE
 )
 log_info(
-  nrow(cor_tab), " motif / VIPER pairs on the top factors, ",
+  nrow(cor_tab), " motif / VIPER pairs in the integration table, ",
   sum(cor_tab$in_heatmap), " of them in the heatmap"
 )
+if (!is.null(selex_calls)) {
+  log_info(
+    "SELEX calls over all of them: ",
+    paste(names(table(cor_tab$selex_call)), table(cor_tab$selex_call),
+      sep = " = ", collapse = ", "
+    )
+  )
+}
 
 #####################################################################
 # D) mTFR / VIPER correlation by methyl-SELEX call
@@ -559,12 +581,12 @@ log_info(
 p_selex <- NULL
 cor_sel <- cor_tab[which(cor_tab$selex_call %in% selex.groups), ]
 if (nrow(cor_sel) == 0) {
-  log_warn("No top factor motif carries one of ", paste(selex.groups, collapse = " or "))
+  log_warn("No motif carries one of ", paste(selex.groups, collapse = " or "))
 } else {
   cor_sel$selex_call <- factor(cor_sel$selex_call, levels = selex.groups)
   selex_counts <- as.data.frame(table(cor_sel$selex_call))
   colnames(selex_counts) <- c("selex_call", "count")
-  log_info("SELEX groups over the top factors: ",
+  log_info("SELEX groups in the boxplot: ",
     paste(selex_counts$selex_call, selex_counts$count, sep = " = ", collapse = ", "))
 
   p_selex <- ggplot(cor_sel, aes(x = selex_call, y = correlation, fill = selex_call)) +
@@ -645,7 +667,12 @@ ht_viper <- Heatmap(
   column_title_gp = gpar(fontsize = 8)
 )
 
-row_correlation <- cor_tab$correlation[match(rownames(mtfr_heatmap), cor_tab$motif)]
+row_correlation <- vapply(seq_len(nrow(mtfr_heatmap)), function(i) {
+  suppressWarnings(cor(
+    as.numeric(mtfr_heatmap[i, ]), as.numeric(viper_heatmap[i, ]),
+    method = "pearson", use = "complete.obs"
+  ))
+}, numeric(1))
 row_correlation[!is.finite(row_correlation)] <- 0
 
 selex_call <- selex_call_of(rownames(mtfr_heatmap))
