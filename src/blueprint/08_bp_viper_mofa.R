@@ -667,6 +667,26 @@ if (nrow(cor_sel) == 0) {
     theme_classic(base_size = 13) +
     theme(legend.position = "none", axis.title = element_text(face = "plain"))
 
+  if (!is.null(tests)) {
+    p_selex <- p_selex +
+      geom_segment(
+        data = tests, inherit.aes = FALSE,
+        aes(x = x1, xend = x2, y = y, yend = y), linewidth = 0.5
+      ) +
+      geom_segment(
+        data = tests, inherit.aes = FALSE,
+        aes(x = x1, xend = x1, y = y - 0.03, yend = y), linewidth = 0.5
+      ) +
+      geom_segment(
+        data = tests, inherit.aes = FALSE,
+        aes(x = x2, xend = x2, y = y - 0.03, yend = y), linewidth = 0.5
+      ) +
+      geom_text(
+        data = tests, inherit.aes = FALSE,
+        aes(x = (x1 + x2) / 2, y = y + 0.02, label = label), vjust = 0, size = 3.8
+      )
+  }
+
   file <- file.path(plot.dir, "correlation_boxplot_by_selex_bp.pdf")
   ggsave(file, p_selex, width = 5.5, height = 6)
   log_info("Wrote ", file)
