@@ -49,7 +49,7 @@ pca.zscore <- FALSE
 
 # Canvas. A4 squeezed the three column rows, so the figure is drawn larger
 # and scaled down at layout time instead
-fig.width <- 14
+fig.width <- 16
 fig.height <- 18
 base.size <- 10
 ellipse.level <- 0.9
@@ -58,6 +58,7 @@ variability.motifSet <- motifSet.distal
 variability.bootstrap <- TRUE
 variability.iterations <- 1000L
 variability.top <- 8
+expected.label.n <- 6
 
 footprint.motifs.EO <- c("FOSL1::JUND", "SPI1")
 # Panel F, one motif per lineage
@@ -453,7 +454,45 @@ p_c <- p_c +
   theme(plot.title = element_text(hjust = 0, face = "plain", size = base.size))
 
 #####################################################################
-# D, PCA of the B and T cell subsets
+# D, the expected deviation scores
+#
+# What the GC model alone predicts for each motif, before any methylation
+# is measured. The correction subtracts this, so the panel shows the size
+# and the direction of what is being removed
+#####################################################################
+
+exp_mat <- SummarizedExperiment::assay(dev_distal, "expected")[, samples_distal, drop = FALSE]
+exp_v <- rowMeans(exp_mat, na.rm = TRUE)
+exp_tab <- data.frame(
+  motif = names(exp_v), expected = unname(exp_v), stringsAsFactors = FALSE
+)
+exp_tab <- exp_tab[order(exp_tab$expected), ]
+exp_tab$rank <- seq_len(nrow(exp_tab))
+exp_extremes <- exp_tab[c(
+  seq_len(expected.label.n),
+  seq.int(nrow(exp_tab) - expected.label.n + 1, nrow(exp_tab))
+), ]
+log_info(
+  "Expected deviation scores run ", round(min(exp_tab$expected), 4), " to ",
+  round(max(exp_tab$expected), 4)
+)
+
+p_expected <- ggplot(exp_tab, aes(x = rank, y = expected)) +
+  geom_hline(yintercept = 1, linetype = "dotted", colour = "grey50") +
+  geom_point(size = 0.7, colour = "grey15") +
+  geom_text_repel(
+    data = exp_extremes, aes(label = motif), size = 2, min.segment.length = 0,
+    segment.size = 0.3, box.padding = 0.4, max.overlaps = Inf
+  ) +
+  labs(
+    title = paste("Expected deviation scores", motifSet.distal),
+    x = "Sorted TFs", y = "Expected deviation score\n(1 = no composition drift)"
+  ) +
+  theme_classic(base_size = base.size) +
+  theme(plot.title = element_text(hjust = 0, face = "plain", size = base.size))
+
+#####################################################################
+# E, PCA of the B and T cell subsets
 #####################################################################
 
 subset_short <- sannot$cellTypeShort[match(samples_distal, sannot$bedFile)]
@@ -469,7 +508,7 @@ log_info(
 p_d <- pca_panel(
   deviations(dev_distal)[, samples_distal[keep_bt], drop = FALSE],
   subset_short[keep_bt], subset_colors,
-  "B and T cell subsets (JASPAR2020 distal)", "D",
+  "B and T cell subsets (JASPAR2020 distal)", "E",
   zscore = subset.zscore,
   ellipse = ifelse(subset_short[keep_bt] %in% bcell_subsets, "B-cells", "T-cells")
 ) +
@@ -637,8 +676,8 @@ if (length(p_e) == 0 || length(p_f) == 0) {
   stop("Panel E or F produced no footprint, the supplementary figure is not written")
 }
 
-p_e[[1]] <- p_e[[1]] + labs(tag = "E")
-p_f[[1]] <- p_f[[1]] + labs(tag = "F")
+p_e[[1]] <- p_e[[1]] + labs(tag = "F")
+p_f[[1]] <- p_f[[1]] + labs(tag = "G")
 
 # A and B carry the same key, so it is collected once and sits under the two
 # of them rather than beside the variability panel
@@ -649,8 +688,10 @@ row_ab <- wrap_plots(
   theme(legend.position = "bottom") &
   guides(colour = guide_legend(nrow = 3, byrow = TRUE))
 
-row1 <- wrap_plots(row_ab, p_c + labs(tag = "C"), nrow = 1, widths = c(2, 1))
-row2 <- wrap_plots(c(list(p_d + labs(tag = "D")), p_e), nrow = 1, widths = c(1, 1.2, 1.2))
+row1 <- wrap_plots(row_ab, p_c + labs(tag = "C"), p_expected + labs(tag = "D"),
+  nrow = 1, widths = c(2, 1, 1)
+)
+row2 <- wrap_plots(c(list(p_d + labs(tag = "E")), p_e), nrow = 1, widths = c(1, 1.2, 1.2))
 row3 <- wrap_plots(p_f, nrow = 1)
 
 supplementary <- wrap_plots(row1, row2, row3, ncol = 1, heights = c(1, 1.5, 1.15)) &
