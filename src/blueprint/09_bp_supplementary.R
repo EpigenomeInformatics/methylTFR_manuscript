@@ -43,6 +43,9 @@ pca.scale <- FALSE
 # on top of each other. Panel D standardises each motif across the subset
 # first, so the components describe how the samples differ from one another.
 subset.zscore <- TRUE
+# Panels A and B get the same treatment as each other, so the only thing
+# separating them is the correction itself
+pca.zscore <- FALSE
 
 # Canvas. A4 squeezed the three column rows, so the figure is drawn larger
 # and scaled down at layout time instead
@@ -311,6 +314,10 @@ motif_group_means <- function(motif, mat, grps, groups) {
 
 fmt <- function(x) ifelse(is.na(x), "NA", format(round(x, 2), nsmall = 2))
 
+# The expected ratio sits within half a percent of 1, so two decimals show
+# 1.00 for every group and hide the differences between them
+fmt3 <- function(x) ifelse(is.na(x), "NA", format(round(x, 3), nsmall = 3))
+
 footprint_data <- function(motif, msites) {
   per_group <- lapply(names(msites), function(g) {
     df <- tryCatch(
@@ -390,12 +397,14 @@ groups_distal <- unname(group_remap[
 
 p_a <- pca_panel(
   uncorrected_genome[, samples_genome, drop = FALSE], groups_genome,
-  cell_type_colors, "Uncorrected deviations (JASPAR2020)", "A"
+  cell_type_colors, "Uncorrected deviations (JASPAR2020)", "A",
+  zscore = pca.zscore
 )
 
 p_b <- pca_panel(
   deviations(dev_genome)[, samples_genome, drop = FALSE], groups_genome,
-  cell_type_colors, "Bias corrected deviations (JASPAR2020)", "B"
+  cell_type_colors, "Bias corrected deviations (JASPAR2020)", "B",
+  zscore = pca.zscore
 )
 
 #####################################################################
@@ -530,15 +539,20 @@ eo_panel <- function(motif) {
   uncorrected <- motif_group_means(
     motif, uncorrected_distal[, samples_distal, drop = FALSE], short5, groups_here
   )
+  expected <- motif_group_means(
+    motif,
+    SummarizedExperiment::assay(dev_distal, "expected")[, samples_distal, drop = FALSE],
+    short5, groups_here
+  )
 
   # The two deviation scores sit on the observed key of each group, so they
   # are read off the colour legend rather than a block in the corner
   key_label <- vapply(present, function(k) {
     g <- sub("^(Observed|Expected)_", "", k)
     if (startsWith(k, "Expected")) {
-      return(paste0(g, " exp"))
+      return(paste0(g, " exp (", fmt3(expected[[g]]), ")"))
     }
-    paste0(g, " obs (", fmt(uncorrected[[g]]), " / ", fmt(corrected[[g]]), ")")
+    paste0(g, " obs (", fmt(uncorrected[[g]]), ", dev ", fmt(corrected[[g]]), ")")
   }, character(1))
 
   df[, key := factor(key_label[match(key, present)], levels = key_label)]
@@ -546,7 +560,7 @@ eo_panel <- function(motif) {
 
   ggplot(df, aes(x = x, y = avg_methyl, colour = key)) +
     geom_line(linewidth = 0.4) +
-    scale_colour_manual(values = colours_here, name = "obs (uncorrected / corrected)") +
+    scale_colour_manual(values = colours_here, name = "Centre / flank methylation ratio") +
     coord_cartesian(xlim = c(-200, 200)) +
     labs(
       title = paste0(motif, " (observed vs expected)"),

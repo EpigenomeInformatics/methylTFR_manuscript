@@ -3,6 +3,22 @@
 # Shared plotting helpers for the methylTFR manuscript
 #####################################################################
 
+# A tiling1kb table carries millions of regions. One vector point per region
+# makes a PDF of well over 100 MB, which GitHub refuses, so the point layer
+# of the large scatters is rasterised while the axes and text stay vector.
+RASTER_DPI <- 300
+
+.point_layer <- function(..., dpi = RASTER_DPI) {
+  if (requireNamespace("ggrastr", quietly = TRUE)) {
+    return(ggrastr::rasterise(ggplot2::geom_point(...), dpi = dpi))
+  }
+  message(
+    "ggrastr is not installed, the point layer stays vector and the file ",
+    "may be very large. Install it with install.packages(\"ggrastr\")."
+  )
+  ggplot2::geom_point(...)
+}
+
 # Green scheme shared by every figure that splits by T cell subtype
 CELL_TYPE_COLORS <- c(
   "TN" = "#C7E9C0",
@@ -233,7 +249,7 @@ maPlot <- function(diffMeth, region, comparison = 1,
   df <- df[order(df$sig, decreasing = TRUE), ]
 
   ggplot(df, aes(x = A, y = M, colour = sig)) +
-    geom_point(size = 0.6, alpha = 0.6) +
+    .point_layer(size = 0.6, alpha = 0.6) +
     geom_hline(yintercept = 0, linetype = "dashed", colour = "black", linewidth = 0.3) +
     scale_colour_manual(values = point.colors, name = NULL) +
     labs(
