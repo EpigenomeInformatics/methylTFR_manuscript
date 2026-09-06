@@ -1,4 +1,4 @@
-name: mtfr
+name: methyltfr_triton
 channels:
   - conda-forge
   - bioconda
@@ -56,6 +56,7 @@ dependencies:
   - r-mixtools
   # ArchR Harmony
   - r-harmony
+  - r-ggpubr
 # Still install manually in R after the env is created:
 #   BiocManager::install("AnnotationHubData")
 #   BiocManager::install("MOFA2")
