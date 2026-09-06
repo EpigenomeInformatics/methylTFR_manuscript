@@ -104,6 +104,7 @@ map.file <- file.path(mofa.dir, "bp_rna_wgbs_map.tsv")
 
 github.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript"
 table.dir <- file.path(github.dir, "tables")
+mixed.dir <- file.path(table.dir, "mixed")
 diff.file <- file.path(table.dir, paste0("diff_", motifSet, "_allcelltypes.RDS"))
 
 model.hdf5 <- file.path(mofa.dir, "mtfr_viper_model_bp.hdf5")
@@ -111,7 +112,7 @@ model.rds <- file.path(mofa.dir, "mtfr_viper_model_bp.rds")
 
 plot.dir <- file.path(github.dir, "figures", "blueprint", "mofa_viper_230826")
 if (!dir.exists(plot.dir)) dir.create(plot.dir, recursive = TRUE)
-if (!dir.exists(table.dir)) dir.create(table.dir, recursive = TRUE)
+if (!dir.exists(mixed.dir)) dir.create(mixed.dir, recursive = TRUE)
 
 #####################################################################
 # Helper functions
@@ -266,7 +267,7 @@ if (all(is.na(r2_df$R2))) stop("No factor could be tested against cell type")
 r2_df <- r2_df[order(-r2_df$R2), ]
 if (drop.factor1) r2_df <- r2_df[r2_df$Factor != "Factor1", ]
 
-write.csv(r2_df, file.path(table.dir, "mofa_bp_viper_factor_celltype_R2.csv"),
+write.csv(r2_df, file.path(mixed.dir, "mofa_bp_viper_factor_celltype_R2.csv"),
   row.names = FALSE
 )
 top_factors <- head(r2_df$Factor, top.factors)
@@ -301,12 +302,11 @@ agg <- weights_df %>%
   group_by(factor) %>%
   mutate(frac = sum_abs / sum(sum_abs)) %>%
   ungroup() %>%
-  filter(factor %in% r2_df$Factor)
+  filter(factor %in% top_factors)
 
-factor_order <- r2_df$Factor
-agg$factor <- factor(agg$factor, levels = factor_order)
-r2_line <- r2_df
-r2_line$Factor <- factor(r2_line$Factor, levels = factor_order)
+agg$factor <- factor(agg$factor, levels = top_factors)
+r2_line <- r2_df[r2_df$Factor %in% top_factors, ]
+r2_line$Factor <- factor(r2_line$Factor, levels = top_factors)
 
 p_modality_frac <- ggplot(agg, aes(x = factor, y = frac)) +
   geom_bar(aes(fill = view), stat = "identity", width = 0.7) +
@@ -333,7 +333,7 @@ ggsave(file.path(plot.dir, "viper_modality_contribution_fraction_R2.pdf"),
 )
 
 #####################################################################
-# C) Factor values per sample
+# B) Factor values per sample
 #####################################################################
 
 factors_top <- factors_long %>%
@@ -353,7 +353,7 @@ ggsave(file.path(plot.dir, "viper_factors_stripplot_by_celltype.pdf"),
 )
 
 #####################################################################
-# D) Factor scatters
+# C) Factor scatters
 #####################################################################
 
 factors_wide <- factors_long %>%
@@ -494,32 +494,106 @@ if (nrow(selected) < 2) {
 pairs_tab <- pairs_tab[match(selected$feature, pairs_tab$motif), ]
 pairs_tab$factor <- selected$factor
 
-write.csv(pairs_tab, file.path(table.dir, "bp_motif_viper_pairs.csv"), row.names = FALSE)
-
 n_dimer <- sum(grepl("::", pairs_tab$motif, fixed = TRUE))
 if (n_dimer > 0) {
-  log_info(n_dimer, " heterodimer motif(s) matched on one subunit, see bp_motif_viper_pairs.csv")
+  log_info(n_dimer, " heterodimer motif(s) matched on one subunit")
 }
 
 #####################################################################
-# E) Paired heatmap, methylTFR left, VIPER right
+# Samples and splits shared by the paired panels
 #####################################################################
 
 heat_samples <- metadata$sample[metadata$celltype %in% heatmap.cell.types]
 heat_samples <- intersect(heat_samples, colnames(mtfr_view))
 heat_groups <- metadata$celltype[match(heat_samples, metadata$sample)]
 log_info(
-  length(heat_samples), " samples in the heatmap across ",
+  length(heat_samples), " samples in the paired panels across ",
   length(unique(heat_groups)), " cell types"
 )
-
-mtfr_heatmap <- mtfr_view[pairs_tab$motif, heat_samples, drop = FALSE]
-viper_heatmap <- viper_view[pairs_tab$viper_tf, heat_samples, drop = FALSE]
-rownames(viper_heatmap) <- pairs_tab$motif
 
 present <- intersect(names(cell_type_colors), unique(heat_groups))
 column_split_factor <- factor(heat_groups, levels = intersect(column.order, unique(heat_groups)))
 row_split_factor <- factor(pairs_tab$factor, levels = top_factors[top_factors %in% pairs_tab$factor])
+
+#####################################################################
+# The integration table: every top factor motif paired with a VIPER TF
+#####################################################################
+
+factor_motifs <- intersect(
+  mtfr_top_factor$feature[mtfr_top_factor$factor %in% top_factors],
+  rownames(mtfr_view)
+)
+cor_tab <- match_motifs_to_viper(factor_motifs, rownames(viper_view))
+cor_tab$factor <- mtfr_top_factor$factor[match(cor_tab$motif, mtfr_top_factor$feature)]
+cor_tab$weight_abs <- mtfr_top_factor$value_abs[match(cor_tab$motif, mtfr_top_factor$feature)]
+cor_tab$correlation <- vapply(seq_len(nrow(cor_tab)), function(i) {
+  suppressWarnings(cor(
+    as.numeric(mtfr_view[cor_tab$motif[i], heat_samples]),
+    as.numeric(viper_view[cor_tab$viper_tf[i], heat_samples]),
+    method = "pearson", use = "complete.obs"
+  ))
+}, numeric(1))
+cor_tab <- cor_tab[is.finite(cor_tab$correlation), ]
+
+cor_tab$selex_call <- if (is.null(selex_calls)) {
+  NA_character_
+} else {
+  selex_call_of(cor_tab$motif)
+}
+cor_tab$differential <- cor_tab$motif %in% sig$motif
+cor_tab$in_heatmap <- cor_tab$motif %in% pairs_tab$motif
+cor_tab <- cor_tab[order(match(cor_tab$factor, top_factors), -cor_tab$weight_abs), ]
+
+write.csv(cor_tab, file.path(mixed.dir, "bp_mtfr_viper_integration.csv"),
+  row.names = FALSE
+)
+log_info(
+  nrow(cor_tab), " motif / VIPER pairs on the top factors, ",
+  sum(cor_tab$in_heatmap), " of them in the heatmap"
+)
+
+#####################################################################
+# D) mTFR / VIPER correlation by methyl-SELEX call
+#####################################################################
+
+p_selex <- NULL
+cor_sel <- cor_tab[which(cor_tab$selex_call %in% selex.groups), ]
+if (nrow(cor_sel) == 0) {
+  log_warn("No top factor motif carries one of ", paste(selex.groups, collapse = " or "))
+} else {
+  cor_sel$selex_call <- factor(cor_sel$selex_call, levels = selex.groups)
+  selex_counts <- as.data.frame(table(cor_sel$selex_call))
+  colnames(selex_counts) <- c("selex_call", "count")
+  log_info("SELEX groups over the top factors: ",
+    paste(selex_counts$selex_call, selex_counts$count, sep = " = ", collapse = ", "))
+
+  p_selex <- ggplot(cor_sel, aes(x = selex_call, y = correlation, fill = selex_call)) +
+    stat_boxplot(geom = "errorbar", width = 0.3, linewidth = 0.6) +
+    geom_boxplot(colour = "black", outlier.shape = NA, width = 0.6) +
+    geom_jitter(aes(color = selex_call), width = 0.2, size = 1.2, alpha = 0.7) +
+    scale_fill_manual(values = selex_colors) +
+    scale_color_manual(values = selex_colors) +
+    scale_y_continuous(limits = c(-1, 1.1), breaks = seq(-1, 1, 0.2)) +
+    geom_text(
+      data = selex_counts, inherit.aes = FALSE,
+      aes(x = selex_call, y = 1.06, label = count), vjust = 0, size = 4.5
+    ) +
+    labs(x = "SELEX Group", y = "Correlation") +
+    theme_classic(base_size = 13) +
+    theme(legend.position = "none", axis.title = element_text(face = "plain"))
+
+  file <- file.path(plot.dir, "correlation_boxplot_by_selex_bp.pdf")
+  ggsave(file, p_selex, width = 5.5, height = 6)
+  log_info("Wrote ", file)
+}
+
+#####################################################################
+# E) Paired heatmap, methylTFR left, VIPER right
+#####################################################################
+
+mtfr_heatmap <- mtfr_view[pairs_tab$motif, heat_samples, drop = FALSE]
+viper_heatmap <- viper_view[pairs_tab$viper_tf, heat_samples, drop = FALSE]
+rownames(viper_heatmap) <- pairs_tab$motif
 
 cell_annotation <- function() {
   HeatmapAnnotation(
@@ -571,12 +645,7 @@ ht_viper <- Heatmap(
   column_title_gp = gpar(fontsize = 8)
 )
 
-row_correlation <- vapply(seq_len(nrow(mtfr_heatmap)), function(i) {
-  suppressWarnings(cor(
-    as.numeric(mtfr_heatmap[i, ]), as.numeric(viper_heatmap[i, ]),
-    use = "complete.obs"
-  ))
-}, numeric(1))
+row_correlation <- cor_tab$correlation[match(rownames(mtfr_heatmap), cor_tab$motif)]
 row_correlation[!is.finite(row_correlation)] <- 0
 
 selex_call <- selex_call_of(rownames(mtfr_heatmap))
@@ -634,7 +703,7 @@ annotation_args$TF <- anno_text(
 
 ha_right <- do.call(rowAnnotation, annotation_args)
 
-panel_d <- grid.grabExpr(
+panel_heat <- grid.grabExpr(
   draw(ht_mtfr + ht_viper + ha_right,
     merge_legend = TRUE, heatmap_legend_side = "right"
   )
@@ -642,118 +711,49 @@ panel_d <- grid.grabExpr(
 
 file <- file.path(plot.dir, "heatmap_mtfr_viper_differential_bp.pdf")
 pdf(file, width = 15, height = 11)
-grid.draw(panel_d)
+grid.draw(panel_heat)
 dev.off()
 log_info("Wrote ", file)
-
-write.csv(
-  data.frame(
-    motif = rownames(mtfr_heatmap),
-    viper_tf = pairs_tab$viper_tf,
-    factor = motif_factor,
-    correlation = row_correlation,
-    stringsAsFactors = FALSE
-  ),
-  file.path(table.dir, "bp_mtfr_viper_row_correlation.csv"),
-  row.names = FALSE
-)
-
-#####################################################################
-# B) mTFR / VIPER correlation by methyl-SELEX call
-#####################################################################
-
-p_selex <- NULL
-if (is.null(selex_calls)) {
-  log_warn("No SELEX calls, the correlation boxplot is skipped")
-} else {
-  factor_motifs <- intersect(
-    mtfr_top_factor$feature[mtfr_top_factor$factor %in% top_factors],
-    rownames(mtfr_view)
-  )
-  cor_tab <- match_motifs_to_viper(factor_motifs, rownames(viper_view))
-  cor_tab$Correlation <- vapply(seq_len(nrow(cor_tab)), function(i) {
-    suppressWarnings(cor(
-      as.numeric(mtfr_view[cor_tab$motif[i], heat_samples]),
-      as.numeric(viper_view[cor_tab$viper_tf[i], heat_samples]),
-      method = "pearson", use = "complete.obs"
-    ))
-  }, numeric(1))
-  cor_tab <- cor_tab[is.finite(cor_tab$Correlation), ]
-  cor_tab$factor <- mtfr_top_factor$factor[match(cor_tab$motif, mtfr_top_factor$feature)]
-  cor_tab$call <- selex_call_of(cor_tab$motif)
-
-  write.csv(cor_tab, file.path(table.dir, "bp_correlation_by_selex.csv"),
-    row.names = FALSE
-  )
-
-  cor_sel <- cor_tab[cor_tab$call %in% selex.groups, ]
-  if (nrow(cor_sel) == 0) {
-    log_warn("No top-factor motif carries one of ", paste(selex.groups, collapse = " or "))
-  } else {
-    cor_sel$call <- factor(cor_sel$call, levels = selex.groups)
-    selex_counts <- as.data.frame(table(cor_sel$call))
-    colnames(selex_counts) <- c("call", "count")
-    log_info("SELEX groups over the top factors: ",
-      paste(selex_counts$call, selex_counts$count, sep = " = ", collapse = ", "))
-
-    p_selex <- ggplot(cor_sel, aes(x = call, y = Correlation, fill = call)) +
-      stat_boxplot(geom = "errorbar", width = 0.3, linewidth = 0.6) +
-      geom_boxplot(colour = "black", outlier.shape = NA, width = 0.6) +
-      geom_jitter(aes(color = call), width = 0.2, size = 1.2, alpha = 0.7) +
-      scale_fill_manual(values = selex_colors) +
-      scale_color_manual(values = selex_colors) +
-      scale_y_continuous(limits = c(-1, 1.1), breaks = seq(-1, 1, 0.2)) +
-      geom_text(
-        data = selex_counts, inherit.aes = FALSE,
-        aes(x = call, y = 1.06, label = count), vjust = 0, size = 4.5
-      ) +
-      labs(x = "SELEX Group", y = "Correlation") +
-      theme_classic(base_size = 13) +
-      theme(legend.position = "none", axis.title = element_text(face = "plain"))
-
-    file <- file.path(plot.dir, "correlation_boxplot_by_selex_bp.pdf")
-    ggsave(file, p_selex, width = 5.5, height = 6)
-    log_info("Wrote ", file)
-  }
-}
 
 #####################################################################
 # The assembled figure
 #####################################################################
 
-tag_theme <- theme(plot.tag = element_text(face = "bold", size = 16))
-
 if (length(scatter_panels) == 0) {
   stop("No factor scatter could be drawn, the assembled figure needs a scatter panel")
 }
 
-top_row <- if (is.null(p_selex)) {
-  p_modality_frac + labs(tag = "A")
-} else {
-  wrap_plots(
-    p_modality_frac + labs(tag = "A"),
-    p_selex + labs(tag = "B"),
-    widths = c(2.4, 1)
-  )
-}
-
-panel_strip <- p_strip + labs(tag = if (is.null(p_selex)) "B" else "C")
-scatter_panels[[1]] <- scatter_panels[[1]] +
-  labs(tag = if (is.null(p_selex)) "C" else "D")
+scatter_panels[[1]] <- scatter_panels[[1]] + labs(tag = "C")
 panel_scatter <- wrap_plots(
   lapply(scatter_panels, function(p) p + theme(legend.position = "none")),
   nrow = 1
 )
-panel_heatmap <- wrap_elements(full = panel_d) +
-  labs(tag = if (is.null(p_selex)) "D" else "E")
 
-combined <- wrap_plots(
-  top_row, panel_strip, panel_scatter, panel_heatmap,
-  ncol = 1, heights = c(1.2, 1.1, 1.2, 2.8)
-) & tag_theme
+panels <- list(
+  p_modality_frac + labs(tag = "A"),
+  p_strip + labs(tag = "B"),
+  panel_scatter
+)
+heights <- c(1, 1.1, 1.2)
+
+if (!is.null(p_selex)) {
+  panels <- c(panels, list(
+    wrap_plots(plot_spacer(), p_selex + labs(tag = "D"), plot_spacer(),
+      widths = c(1, 1.4, 1))
+  ))
+  heights <- c(heights, 1.3)
+}
+
+panels <- c(panels, list(
+  wrap_elements(full = panel_heat) + labs(tag = if (is.null(p_selex)) "D" else "E")
+))
+heights <- c(heights, 2.8)
+
+combined <- wrap_plots(panels, ncol = 1, heights = heights) &
+  theme(plot.tag = element_text(face = "bold", size = 16))
 
 file <- file.path(plot.dir, "figure_bp_viper_mofa_integration.pdf")
-ggsave(file, combined, width = 16, height = 24, limitsize = FALSE)
+ggsave(file, combined, width = 16, height = 25, limitsize = FALSE)
 log_info("Wrote ", file)
 
 log_success("Finished the VIPER integration, figures in ", plot.dir)
