@@ -480,22 +480,45 @@ candidates <- weights_df %>%
   filter(view == "mtfr", factor %in% top_factors, feature %in% viper_pairs$motif) %>%
   left_join(viper_pairs, by = c("feature" = "motif"))
 
-# The strongest loadings of each top factor in turn. A motif and a VIPER TF
-# are taken once, so the factors do not repeat each other's rows and no
-# activity row is drawn twice.
+rank_on <- function(f, n, skip_motifs, skip_tfs) {
+  candidates %>%
+    filter(factor == f, !feature %in% skip_motifs, !viper_tf %in% skip_tfs) %>%
+    arrange(desc(value_abs)) %>%
+    head(n)
+}
+
 taken_motifs <- character(0)
 taken_tfs <- character(0)
-selected <- list()
-for (f in top_factors) {
-  ranked <- candidates %>%
-    filter(factor == f, !feature %in% taken_motifs, !viper_tf %in% taken_tfs) %>%
-    arrange(desc(value_abs)) %>%
-    head(heatmap.tfs.per.factor)
-  taken_motifs <- c(taken_motifs, ranked$feature)
-  taken_tfs <- c(taken_tfs, ranked$viper_tf)
-  selected[[f]] <- ranked
+selected <- vector("list", length(top_factors))
+names(selected) <- top_factors
+
+# One row per factor per round, so a scarce pool of VIPER TFs is shared out
+# evenly instead of being used up by the factors that come first
+for (i in seq_len(heatmap.tfs.per.factor)) {
+  for (f in top_factors) {
+    pick <- rank_on(f, 1, taken_motifs, taken_tfs)
+    if (nrow(pick) == 0) next
+    selected[[f]] <- bind_rows(selected[[f]], pick)
+    taken_motifs <- c(taken_motifs, pick$feature)
+    taken_tfs <- c(taken_tfs, pick$viper_tf)
+  }
 }
-selected <- bind_rows(selected)
+
+# A factor still short of its quota reuses TFs another factor already carries
+for (f in top_factors) {
+  short <- heatmap.tfs.per.factor - NROW(selected[[f]])
+  if (short <= 0) next
+  extra <- rank_on(f, short, taken_motifs, character(0))
+  log_info(f, " reused ", nrow(extra), " TF(s) already shown on another factor")
+  selected[[f]] <- bind_rows(selected[[f]], extra)
+  taken_motifs <- c(taken_motifs, extra$feature)
+  if (NROW(selected[[f]]) < heatmap.tfs.per.factor) {
+    log_warn(f, " filled only ", NROW(selected[[f]]), " of ", heatmap.tfs.per.factor, " rows")
+  }
+}
+
+selected <- bind_rows(selected[top_factors]) %>%
+  arrange(match(factor, top_factors), desc(value_abs))
 
 log_info(
   "Heatmap motifs per factor: ",
@@ -588,6 +611,46 @@ if (nrow(cor_sel) == 0) {
   colnames(selex_counts) <- c("selex_call", "count")
   log_info("SELEX groups in the boxplot: ",
     paste(selex_counts$selex_call, selex_counts$count, sep = " = ", collapse = ", "))
+
+  # Two sided Wilcoxon rank sum on the correlations, one test per pair of
+  # SELEX groups, Benjamini-Hochberg over those tests
+  groups_present <- levels(droplevels(cor_sel$selex_call))
+  tests <- NULL
+  if (length(groups_present) >= 2) {
+    tests <- bind_rows(lapply(combn(groups_present, 2, simplify = FALSE), function(g) {
+      x <- cor_sel$correlation[cor_sel$selex_call == g[1]]
+      y <- cor_sel$correlation[cor_sel$selex_call == g[2]]
+      data.frame(
+        group1 = g[1], group2 = g[2], n1 = length(x), n2 = length(y),
+        median1 = median(x), median2 = median(y),
+        p_value = if (length(x) < 3 || length(y) < 3) {
+          NA_real_
+        } else {
+          suppressWarnings(wilcox.test(x, y)$p.value)
+        },
+        stringsAsFactors = FALSE
+      )
+    }))
+    tests$p_adjusted <- p.adjust(tests$p_value, method = "BH")
+
+    write.csv(tests, file.path(mixed.dir, "bp_selex_correlation_test.csv"),
+      row.names = FALSE
+    )
+    log_info(
+      "Wilcoxon: ",
+      paste(tests$group1, " vs ", tests$group2, " p.adj = ",
+        signif(tests$p_adjusted, 3),
+        collapse = "; "
+      )
+    )
+
+    tests$x1 <- match(tests$group1, groups_present)
+    tests$x2 <- match(tests$group2, groups_present)
+    tests$y <- 0.78 + (seq_len(nrow(tests)) - 1) * 0.16
+    tests$label <- ifelse(is.na(tests$p_adjusted), "n.a.",
+      paste0("p.adj = ", format.pval(tests$p_adjusted, digits = 2, eps = 1e-16))
+    )
+  }
 
   p_selex <- ggplot(cor_sel, aes(x = selex_call, y = correlation, fill = selex_call)) +
     stat_boxplot(geom = "errorbar", width = 0.3, linewidth = 0.6) +
@@ -736,7 +799,7 @@ panel_heat <- grid.grabExpr(
   )
 )
 
-file <- file.path(plot.dir, "heatmap_mtfr_viper_differential_bp.pdf")
+file <- file.path(plot.dir, "heatmap_mtfr_viper_bp.pdf")
 pdf(file, width = 15, height = 11)
 grid.draw(panel_heat)
 dev.off()
@@ -750,37 +813,29 @@ if (length(scatter_panels) == 0) {
   stop("No factor scatter could be drawn, the assembled figure needs a scatter panel")
 }
 
-scatter_panels[[1]] <- scatter_panels[[1]] + labs(tag = "C")
-panel_scatter <- wrap_plots(
-  lapply(scatter_panels, function(p) p + theme(legend.position = "none")),
-  nrow = 1
-)
-
-panels <- list(
+row_ab <- wrap_plots(
   p_modality_frac + labs(tag = "A"),
   p_strip + labs(tag = "B"),
-  panel_scatter
+  nrow = 1, widths = c(1, 1.15)
 )
-heights <- c(1, 1.1, 1.2)
 
+scatter_panels[[1]] <- scatter_panels[[1]] + labs(tag = "C")
+row_cd <- lapply(scatter_panels, function(p) p + theme(legend.position = "none"))
+cd_widths <- rep(1, length(row_cd))
 if (!is.null(p_selex)) {
-  panels <- c(panels, list(
-    wrap_plots(plot_spacer(), p_selex + labs(tag = "D"), plot_spacer(),
-      widths = c(1, 1.4, 1))
-  ))
-  heights <- c(heights, 1.3)
+  row_cd <- c(row_cd, list(p_selex + labs(tag = "D")))
+  cd_widths <- c(cd_widths, 0.8)
 }
+row_cd <- wrap_plots(row_cd, nrow = 1, widths = cd_widths)
 
-panels <- c(panels, list(
-  wrap_elements(full = panel_heat) + labs(tag = if (is.null(p_selex)) "D" else "E")
-))
-heights <- c(heights, 2.8)
+row_e <- wrap_elements(full = panel_heat) +
+  labs(tag = if (is.null(p_selex)) "D" else "E")
 
-combined <- wrap_plots(panels, ncol = 1, heights = heights) &
+combined <- wrap_plots(row_ab, row_cd, row_e, ncol = 1, heights = c(1, 1.1, 2.6)) &
   theme(plot.tag = element_text(face = "bold", size = 16))
 
 file <- file.path(plot.dir, "figure_bp_viper_mofa_integration.pdf")
-ggsave(file, combined, width = 16, height = 25, limitsize = FALSE)
+ggsave(file, combined, width = 18, height = 20, limitsize = FALSE)
 log_info("Wrote ", file)
 
 log_success("Finished the VIPER integration, figures in ", plot.dir)
