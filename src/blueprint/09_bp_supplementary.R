@@ -4,12 +4,14 @@
 # 09_bp_supplementary.R
 # created on 06-09-2026 by Irem B Gunduz
 # The Blueprint supplementary figure
-#   A  PCA of the uncorrected deviations, JASPAR2020
-#   B  PCA of the bias corrected deviations, JASPAR2020
+#   A  PCA of the bias corrected deviations, with the cell type R2
+#   B  PCA of the uncorrected deviations, with the cell type R2
 #   C  Motif variability across all motifs, top motifs annotated
-#   D  PCA of the B and T cell subsets
-#   E  Observed and expected footprints of two motifs, B and T cells
-#   F  B versus T differential, one marker motif per lineage
+#   D  Expected deviation scores, with their spread across samples
+#   E  Where the variance of the expectation sits, motif against sample
+#   F  PCA of the B and T cell subsets
+#   G  Observed and expected footprints of two motifs, B and T cells
+#   H  B versus T differential, one marker motif per lineage
 #####################################################################
 
 suppressPackageStartupMessages({
@@ -40,12 +42,22 @@ pca.center <- FALSE
 pca.scale <- FALSE
 # On the raw uncentred deviations PC1 is the mean methylation profile and
 # takes nearly all of the variance, which leaves the B and T subsets sitting
-# on top of each other. Panel D standardises each motif across the subset
+# on top of each other. Panel F standardises each motif across the subset
 # first, so the components describe how the samples differ from one another.
 subset.zscore <- TRUE
 # Panels A and B get the same treatment as each other, so the only thing
-# separating them is the correction itself
-pca.zscore <- FALSE
+# separating them is the correction itself. Standardising each motif also
+# removes any part of the expectation that is constant for that motif, so
+# what remains between the two panels is the part that varies by sample
+pca.zscore <- TRUE
+# Each panel names its own motif set and whether the correction is applied,
+# so the two can differ. set is "distal" or "genome"
+pca.panelA <- list(set = "distal", corrected = FALSE)
+pca.panelB <- list(set = "genome", corrected = TRUE)
+# The share of a component's variance that cell type accounts for, printed
+# under each title. The two panels use different motif sets, so the numbers
+# describe each panel rather than comparing them. Set FALSE to leave it out
+pca.show.r2 <- TRUE
 
 # Canvas. A4 squeezed the three column rows, so the figure is drawn larger
 # and scaled down at layout time instead
@@ -61,7 +73,7 @@ variability.top <- 8
 expected.label.n <- 6
 
 footprint.motifs.EO <- c("FOSL1::JUND", "SPI1")
-# Panel F, one motif per lineage
+# Panel H, one motif per lineage
 footprint.motif.B <- "BATF"
 footprint.motif.T <- "PAX1"
 flank.norm <- 30
@@ -124,7 +136,7 @@ cell_type_colors <- c(
 )
 cell_type_levels <- names(cell_type_colors)
 
-# The B and T subsets of panel D, shaded from the lineage colour so the
+# The B and T subsets of panel F, shaded from the lineage colour so the
 # panel still reads as B against T at a glance
 bcell_subsets <- c("Bcell_pre", "Bcell_naive", "Bcell_gc", "Bcell_mem")
 tcell_subsets <- c(
@@ -152,11 +164,17 @@ eo_colors <- c(
   "Expected_Tcell" = "#B3E4EE",
   "Observed_Tcell" = "#4FC3D9"
 )
-# Panel F draws the same three groups as E, in the observed colours
+# Panel H draws the same three groups as G, in the observed colours
 foot_colors <- c(
   "Bcell_naive" = unname(eo_colors[["Observed_Bcell_naive"]]),
   "Bcell_mem" = unname(eo_colors[["Observed_Bcell_mem"]]),
   "Tcell" = unname(eo_colors[["Observed_Tcell"]])
+)
+
+# Where the variance of the expectation sits
+var_source_colors <- c(
+  "Same in every sample" = "#B5A38A",
+  "Varies between samples" = "#C2377C"
 )
 
 # Illustrator sees every opaque panel, plot and legend background as its own
@@ -192,8 +210,19 @@ clean_matrix <- function(mat, label) {
   mat[keep, , drop = FALSE]
 }
 
+# Variance of one component that the grouping accounts for. Panels A and B
+# differ by little to the eye once the scores are standardised, so the
+# separation they achieve is reported as a number rather than left to it
+component_r2 <- function(values, groups) {
+  if (length(unique(groups)) < 2) {
+    return(NA_real_)
+  }
+  ss <- summary(aov(v ~ g, data = data.frame(v = values, g = groups)))[[1]]
+  ss["g", "Sum Sq"] / sum(ss[, "Sum Sq"])
+}
+
 pca_panel <- function(mat, groups, palette, title, label, zscore = FALSE,
-                      ellipse = NULL) {
+                      ellipse = NULL, show.r2 = FALSE) {
   mat <- clean_matrix(mat, label)
   if (zscore) mat <- row_zscore(mat)
   log_info(
@@ -208,6 +237,16 @@ pca_panel <- function(mat, groups, palette, title, label, zscore = FALSE,
     PC1 = pca$x[, 1], PC2 = pca$x[, 2],
     group = factor(groups, levels = present)
   )
+
+  r2 <- c(component_r2(df$PC1, df$group), component_r2(df$PC2, df$group))
+  log_info(
+    label, ": cell type R2 on PC1 ", round(r2[1], 3), ", PC2 ", round(r2[2], 3)
+  )
+  if (show.r2) {
+    title <- sprintf(
+      "%s\ncell type R2: PC1 %.2f, PC2 %.2f", title, r2[1], r2[2]
+    )
+  }
 
   p <- ggplot(df, aes(x = PC1, y = PC2, colour = group)) +
     geom_point(size = 1.6, alpha = 0.9) +
@@ -365,9 +404,14 @@ sannot$bedFile <- as.character(sannot$bedFile)
 dev_distal <- readRDS(dev.file.distal)
 dev_genome <- readRDS(dev.file.genome)
 
-if (!"expected" %in% SummarizedExperiment::assayNames(dev_genome)) {
-  stop("The genome wide deviations carry no expected assay, panel A cannot be drawn")
+for (nm in c("distal", "genome")) {
+  obj <- if (nm == "distal") dev_distal else dev_genome
+  if (!"expected" %in% SummarizedExperiment::assayNames(obj)) {
+    stop("The ", nm, " deviations carry no expected assay, panel A cannot be drawn")
+  }
 }
+uncorrected_distal <- deviations(dev_distal) +
+  SummarizedExperiment::assay(dev_distal, "expected")
 uncorrected_genome <- deviations(dev_genome) +
   SummarizedExperiment::assay(dev_genome, "expected")
 
@@ -396,17 +440,27 @@ groups_distal <- unname(group_remap[
 # A and B, PCA of the uncorrected and the corrected deviations
 #####################################################################
 
-p_a <- pca_panel(
-  uncorrected_genome[, samples_genome, drop = FALSE], groups_genome,
-  cell_type_colors, "Uncorrected deviations (JASPAR2020)", "A",
-  zscore = pca.zscore
-)
+build_pca <- function(spec, tag) {
+  on_distal <- identical(spec$set, "distal")
+  mat <- if (on_distal) {
+    if (spec$corrected) deviations(dev_distal) else uncorrected_distal
+  } else {
+    if (spec$corrected) deviations(dev_genome) else uncorrected_genome
+  }
+  samples <- if (on_distal) samples_distal else samples_genome
+  groups <- if (on_distal) groups_distal else groups_genome
+  label <- paste0(
+    if (spec$corrected) "Bias corrected deviations (" else "Uncorrected deviations (",
+    if (on_distal) "JASPAR2020 distal" else "JASPAR2020", ")"
+  )
+  pca_panel(
+    mat[, samples, drop = FALSE], groups, cell_type_colors, label, tag,
+    zscore = pca.zscore, show.r2 = pca.show.r2
+  )
+}
 
-p_b <- pca_panel(
-  deviations(dev_genome)[, samples_genome, drop = FALSE], groups_genome,
-  cell_type_colors, "Bias corrected deviations (JASPAR2020)", "B",
-  zscore = pca.zscore
-)
+p_a <- build_pca(pca.panelA, "A")
+p_b <- build_pca(pca.panelB, "B")
 
 #####################################################################
 # C, motif variability
@@ -441,10 +495,14 @@ if (all(c("bootstrap_lower_bound", "bootstrap_upper_bound") %in% colnames(var_re
 }
 p_c <- p_c +
   geom_point(size = 0.7, colour = "grey15") +
+  # The top motifs sit on top of each other at the left edge of the curve, so
+  # the labels are fanned out into the empty right of the panel instead
   geom_text_repel(
     data = head(var_res, variability.top),
-    aes(label = motifs), size = 2, min.segment.length = 0,
-    segment.size = 0.3, box.padding = 0.4, max.overlaps = Inf
+    aes(label = motifs), size = 2.8,
+    nudge_x = 90, direction = "y", hjust = 0,
+    min.segment.length = 0, segment.size = 0.3, segment.colour = "grey55",
+    box.padding = 0.3, max.overlaps = Inf
   ) +
   labs(
     title = paste("Motif variability", variability.motifSet),
@@ -458,7 +516,8 @@ p_c <- p_c +
 #
 # What the GC model alone predicts for each motif, before any methylation
 # is measured. The correction subtracts this, so the panel shows the size
-# and the direction of what is being removed
+# and the direction of what is being removed. The vertical range is the
+# spread of the same motif's expectation across the samples
 #####################################################################
 
 exp_mat <- SummarizedExperiment::assay(dev_distal, "expected")[, samples_distal, drop = FALSE]
@@ -468,10 +527,8 @@ exp_tab <- data.frame(
 )
 exp_tab <- exp_tab[order(exp_tab$expected), ]
 exp_tab$rank <- seq_len(nrow(exp_tab))
-exp_extremes <- exp_tab[c(
-  seq_len(expected.label.n),
-  seq.int(nrow(exp_tab) - expected.label.n + 1, nrow(exp_tab))
-), ]
+exp_low <- head(exp_tab, expected.label.n)
+exp_high <- tail(exp_tab, expected.label.n)
 log_info(
   "Expected deviation scores run ", round(min(exp_tab$expected), 4), " to ",
   round(max(exp_tab$expected), 4)
@@ -480,9 +537,19 @@ log_info(
 p_expected <- ggplot(exp_tab, aes(x = rank, y = expected)) +
   geom_hline(yintercept = 1, linetype = "dotted", colour = "grey50") +
   geom_point(size = 0.7, colour = "grey15") +
+  # Both ends of a monotone curve crowd their own corner and leave the middle
+  # of the panel empty, so each set of labels is fanned into that space
   geom_text_repel(
-    data = exp_extremes, aes(label = motif), size = 2, min.segment.length = 0,
-    segment.size = 0.3, box.padding = 0.4, max.overlaps = Inf
+    data = exp_low, aes(label = motif), size = 2.6,
+    nudge_x = 120, direction = "y", hjust = 0,
+    min.segment.length = 0, segment.size = 0.3, segment.colour = "grey55",
+    box.padding = 0.3, max.overlaps = Inf
+  ) +
+  geom_text_repel(
+    data = exp_high, aes(label = motif), size = 2.6,
+    nudge_x = -120, direction = "y", hjust = 1,
+    min.segment.length = 0, segment.size = 0.3, segment.colour = "grey55",
+    box.padding = 0.3, max.overlaps = Inf
   ) +
   labs(
     title = paste("Expected deviation scores", motifSet.distal),
@@ -492,7 +559,69 @@ p_expected <- ggplot(exp_tab, aes(x = rank, y = expected)) +
   theme(plot.title = element_text(hjust = 0, face = "plain", size = base.size))
 
 #####################################################################
-# E, PCA of the B and T cell subsets
+# E, where the variance of the expectation sits
+#
+# The expected score stays close to 1 for every motif, which invites the
+# question of why it is subtracted at all. It is computed per motif and per
+# sample. Standardising the scores removes only the motif part, so the
+# sample part is the component the correction is there for
+#####################################################################
+
+exp_grand <- mean(exp_mat, na.rm = TRUE)
+ss_total <- sum((exp_mat - exp_grand)^2, na.rm = TRUE)
+ss_motif <- ncol(exp_mat) * sum((rowMeans(exp_mat, na.rm = TRUE) - exp_grand)^2, na.rm = TRUE)
+ss_sample <- nrow(exp_mat) * sum((colMeans(exp_mat, na.rm = TRUE) - exp_grand)^2, na.rm = TRUE)
+
+# Two bars rather than three. The question the panel answers is how much of
+# the expectation is a per motif constant, which standardising removes, and
+# how much is not, which is the part only the correction can take out
+var_tab <- data.frame(
+  source = factor(names(var_source_colors), levels = names(var_source_colors)),
+  frac = c(ss_motif, ss_total - ss_motif) / ss_total
+)
+
+sd_within <- median(apply(exp_mat, 1, sd, na.rm = TRUE), na.rm = TRUE)
+sd_dev <- median(
+  apply(deviations(dev_distal)[, samples_distal, drop = FALSE], 1, sd, na.rm = TRUE),
+  na.rm = TRUE
+)
+log_info(
+  "Expected score variance: same in every sample ",
+  round(100 * var_tab$frac[1], 1), "%, varies between samples ",
+  round(100 * var_tab$frac[2], 1), "% (of which ",
+  round(100 * ss_sample / ss_total, 1), "% is a whole sample shift and ",
+  round(100 * max(ss_total - ss_motif - ss_sample, 0) / ss_total, 1),
+  "% is motif by sample)"
+)
+log_info(
+  "Median s.d. across samples within a motif: expected ", signif(sd_within, 3),
+  ", corrected deviation ", signif(sd_dev, 3),
+  ", ratio ", round(sd_within / sd_dev, 3)
+)
+write.csv(var_tab, file.path(table.dir, "bp_expected_variance_decomposition.csv"),
+  row.names = FALSE
+)
+
+p_expvar <- ggplot(var_tab, aes(x = frac, y = source, fill = source)) +
+  geom_col(width = 0.6) +
+  geom_text(aes(label = sprintf("%.1f%%", 100 * frac)),
+    hjust = -0.15, size = 3
+  ) +
+  scale_fill_manual(values = var_source_colors, guide = "none") +
+  # The two bars are the two halves of one whole, so the percentages on them
+  # are the whole message and an axis running to 100 only adds empty space
+  scale_x_continuous(expand = expansion(mult = c(0, 0.25))) +
+  labs(title = "Expected score variance", x = NULL, y = NULL) +
+  theme_classic(base_size = base.size) +
+  theme(
+    plot.title = element_text(hjust = 0, face = "plain", size = base.size),
+    axis.line = element_blank(),
+    axis.ticks = element_blank(),
+    axis.text.x = element_blank()
+  )
+
+#####################################################################
+# F, PCA of the B and T cell subsets
 #####################################################################
 
 subset_short <- sannot$cellTypeShort[match(samples_distal, sannot$bedFile)]
@@ -508,7 +637,7 @@ log_info(
 p_d <- pca_panel(
   deviations(dev_distal)[, samples_distal[keep_bt], drop = FALSE],
   subset_short[keep_bt], subset_colors,
-  "B and T cell subsets (JASPAR2020 distal)", "E",
+  "B and T cell subsets (JASPAR2020 distal)", "F",
   zscore = subset.zscore,
   ellipse = ifelse(subset_short[keep_bt] %in% bcell_subsets, "B-cells", "T-cells")
 ) +
@@ -532,7 +661,7 @@ if (motifSet.distal == "jaspar2020_distal") {
 }
 
 #####################################################################
-# F, the two marker motifs
+# H, the two marker motifs
 #####################################################################
 
 diff_motifs <- c(footprint.motif.B, footprint.motif.T)
@@ -540,7 +669,7 @@ missing_motifs <- setdiff(diff_motifs, names(tf_bindsites))
 if (length(missing_motifs) > 0) {
   stop("Motif has no binding sites: ", paste(missing_motifs, collapse = ", "))
 }
-log_info("Panel F motifs: ", paste(diff_motifs, collapse = ", "))
+log_info("Panel H motifs: ", paste(diff_motifs, collapse = ", "))
 
 #####################################################################
 # Merged methylation for the footprints
@@ -553,19 +682,17 @@ msites_eo <- msites5[intersect(eo_group_order, names(msites5))]
 if (length(msites_eo) == 0) stop("None of the B or T groups are in the merged methylation")
 
 #####################################################################
-# E, observed and expected footprints
+# G, observed and expected footprints
 #####################################################################
 
 # The uncorrected score is the deviation with the GC expectation added back,
 # the corrected one is the deviation itself
 short5 <- map_cellType5Group(sannot$cellTypeShort[match(samples_distal, sannot$bedFile)])
-uncorrected_distal <- deviations(dev_distal) +
-  SummarizedExperiment::assay(dev_distal, "expected")
 
 eo_panel <- function(motif) {
   df <- footprint_data(motif, msites_eo)
   if (is.null(df)) {
-    log_warn(motif, ": no footprint, panel E entry skipped")
+    log_warn(motif, ": no footprint, panel G entry skipped")
     return(NULL)
   }
   df[, key := paste(type, group, sep = "_")]
@@ -619,13 +746,13 @@ eo_panel <- function(motif) {
 p_e <- Filter(Negate(is.null), lapply(footprint.motifs.EO, eo_panel))
 
 #####################################################################
-# F, observed minus expected footprints of the two marker motifs
+# H, observed minus expected footprints of the two marker motifs
 #####################################################################
 
 diff_panel <- function(motif) {
   df <- footprint_data(motif, msites_eo)
   if (is.null(df)) {
-    log_warn(motif, ": no footprint, panel F entry skipped")
+    log_warn(motif, ": no footprint, panel H entry skipped")
     return(NULL)
   }
   df <- df[, .(
@@ -673,11 +800,11 @@ p_f <- Filter(Negate(is.null), lapply(diff_motifs, diff_panel))
 #####################################################################
 
 if (length(p_e) == 0 || length(p_f) == 0) {
-  stop("Panel E or F produced no footprint, the supplementary figure is not written")
+  stop("Panel G or H produced no footprint, the supplementary figure is not written")
 }
 
-p_e[[1]] <- p_e[[1]] + labs(tag = "F")
-p_f[[1]] <- p_f[[1]] + labs(tag = "G")
+p_e[[1]] <- p_e[[1]] + labs(tag = "G")
+p_f[[1]] <- p_f[[1]] + labs(tag = "H")
 
 # A and B carry the same key, so it is collected once and sits under the two
 # of them rather than beside the variability panel
@@ -688,10 +815,13 @@ row_ab <- wrap_plots(
   theme(legend.position = "bottom") &
   guides(colour = guide_legend(nrow = 3, byrow = TRUE))
 
-row1 <- wrap_plots(row_ab, p_c + labs(tag = "C"), p_expected + labs(tag = "D"),
-  nrow = 1, widths = c(2, 1, 1)
+row1 <- wrap_plots(row_ab, p_c + labs(tag = "C"),
+  wrap_plots(p_expected + labs(tag = "D"), p_expvar + labs(tag = "E"),
+    ncol = 1, heights = c(2, 1)
+  ),
+  nrow = 1, widths = c(2, 1, 1.15)
 )
-row2 <- wrap_plots(c(list(p_d + labs(tag = "E")), p_e), nrow = 1, widths = c(1, 1.2, 1.2))
+row2 <- wrap_plots(c(list(p_d + labs(tag = "F")), p_e), nrow = 1, widths = c(1, 1.2, 1.2))
 row3 <- wrap_plots(p_f, nrow = 1)
 
 supplementary <- wrap_plots(row1, row2, row3, ncol = 1, heights = c(1, 1.5, 1.15)) &

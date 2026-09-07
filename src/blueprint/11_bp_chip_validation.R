@@ -44,6 +44,21 @@ standardise.per.sample <- TRUE
 
 background.n <- 50L
 
+# The aggregate signal profile: the conventional way to show a ChIP result,
+# and the first thing a reviewer asks for. Computed only for the example
+# motifs plus a set of random distal regions that normalises every sample
+profile.window <- 2000L
+profile.bins <- 40L
+profile.sites <- 500L
+profile.random.n <- 500L
+# Ordered preference. The first available ones are taken, anything missing is
+# reported and the remaining slots fall back to the automatic pick
+profile.motifs <- c(
+  "FOSL2::JUNB", "SPIB",
+  "MAFB", "MAF", "NR1H3::RXRA", "CEBPB", "SPI1"
+)
+profile.motifs.n <- 3L
+
 min.samples.per.celltype <- 5L
 drop.cell.types <- c("other", "thymocyte")
 
@@ -81,6 +96,14 @@ zscore_vec <- function(x) {
     return(rep(0, length(x)))
   }
   (x - mean(x, na.rm = TRUE)) / s
+}
+
+# JASPAR writes heterodimers as FOS::JUNB and variants as JUN(var.2), so a
+# motif can map to several TFs
+motif_to_tfs <- function(motif) {
+  parts <- unlist(strsplit(motif, "::", fixed = TRUE))
+  parts <- sub("\\s*\\(var\\.[0-9]+\\)$", "", parts)
+  toupper(trimws(parts))
 }
 
 cor_across <- function(a, b) {
@@ -323,6 +346,161 @@ log_info(
 )
 
 #####################################################################
+# The example motifs
+#
+# JASPAR is full of AP-1 dimers and ranking on agreement alone returns
+# nothing else, so a TF family is allowed one example
+#####################################################################
+
+tf_family <- function(tf) {
+  fam <- sub("[0-9]+$", "", tf)
+  fam <- sub("^FOSL$", "FOS", fam)
+  fam <- sub("^JUN[BD]$", "JUN", fam)
+  fam
+}
+
+families_of <- function(motifs) {
+  unique(unlist(lapply(motifs, function(m) {
+    vapply(motif_to_tfs(m), tf_family, character(1), USE.NAMES = FALSE)
+  })))
+}
+
+auto_examples <- function(n, exclude = character(0)) {
+  if (n <= 0) {
+    return(primary[0])
+  }
+  ranked <- primary[r_mtfr < 0 & r_viper > 0][order(-(abs(r_mtfr) + abs(r_viper)))]
+  taken <- families_of(exclude)
+  keep <- integer(0)
+  for (i in seq_len(nrow(ranked))) {
+    if (ranked$motif[i] %in% exclude) next
+    fams <- families_of(ranked$motif[i])
+    if (any(fams %in% taken)) next
+    taken <- c(taken, fams)
+    keep <- c(keep, i)
+    if (length(keep) == n) break
+  }
+  ranked[keep]
+}
+
+examples <- primary[0]
+if (!is.null(profile.motifs)) {
+  hit <- profile.motifs[profile.motifs %in% primary$motif]
+  miss <- setdiff(profile.motifs, primary$motif)
+  if (length(miss) > 0) {
+    log_warn(
+      "Not available as a paired motif with ChIP, mRNA and VIPER: ",
+      paste(miss, collapse = ", ")
+    )
+  }
+  examples <- primary[match(head(hit, profile.motifs.n), primary$motif)]
+}
+if (nrow(examples) < profile.motifs.n) {
+  examples <- rbind(examples, auto_examples(profile.motifs.n - nrow(examples), examples$motif))
+}
+if (nrow(examples) == 0) stop("No example motif could be chosen")
+log_info("Example motifs: ", paste(examples$motif, collapse = ", "))
+
+#####################################################################
+# Aggregate signal profiles around the motif centres
+#
+# Every window is the same width so the bins can be averaged as a matrix.
+# Each sample is divided by its own mean over the random distal regions,
+# which puts every sample on an enrichment scale and removes the per
+# experiment scaling of fc.signal
+#####################################################################
+
+profile_windows <- function(gr, label) {
+  gr <- resize(gr, width = 1L, fix = "center")
+  gr <- resize(gr, width = 2L * profile.window, fix = "center")
+  seqlevelsStyle(gr) <- "UCSC"
+  gr <- gr[width(gr) == 2L * profile.window]
+  gr <- gr[start(gr) > 0]
+  mcols(gr) <- DataFrame(group = rep(label, length(gr)))
+  gr
+}
+
+set.seed(42)
+profile_list <- lapply(seq_len(nrow(examples)), function(i) {
+  m <- examples$motif[i]
+  gr <- subsetByOverlaps(tf_bindsites[[m]], enhancer)
+  if (length(gr) > profile.sites) gr <- gr[sample(length(gr), profile.sites)]
+  profile_windows(gr, m)
+})
+rand <- enhancer[sample(length(enhancer), min(profile.random.n, length(enhancer)))]
+profile_list <- c(profile_list, list(profile_windows(rand, "Random distal regions")))
+profile_ranges <- sort(do.call(c, unname(profile_list)))
+profile_group <- factor(mcols(profile_ranges)$group,
+  levels = c(examples$motif, "Random distal regions")
+)
+log_info(
+  length(profile_ranges), " profile windows of ", 2L * profile.window, " bp: ",
+  paste(names(table(profile_group)), table(profile_group), sep = " = ", collapse = ", ")
+)
+
+bin_width <- (2L * profile.window) %/% profile.bins
+bin_index <- rep(seq_len(profile.bins), each = bin_width)
+bin_pos <- (seq_len(profile.bins) - 0.5) * bin_width - profile.window
+
+profile_for <- function(path, sample_id) {
+  cache <- file.path(cache.dir, paste0(sample_id, "_", mark.primary, "_profile.rds"))
+  if (file.exists(cache)) {
+    return(readRDS(cache))
+  }
+  if (!file.exists(path)) {
+    return(NULL)
+  }
+  bw <- BigWigFile(path)
+  keep <- seqlevels(profile_ranges) %in% seqlevels(seqinfo(bw))
+  query <- keepSeqlevels(profile_ranges, seqlevels(profile_ranges)[keep],
+    pruning.mode = "coarse"
+  )
+  grp <- factor(mcols(query)$group, levels = levels(profile_group))
+  out <- rbindlist(lapply(levels(grp), function(g) {
+    sel <- query[grp == g]
+    if (length(sel) == 0) {
+      return(NULL)
+    }
+    vals <- import(bw, which = sel, as = "NumericList")
+    ok <- lengths(vals) == 2L * profile.window
+    if (!any(ok)) {
+      return(NULL)
+    }
+    mat <- matrix(as.numeric(unlist(vals[ok])), nrow = 2L * profile.window)
+    mat[!is.finite(mat)] <- 0
+    binned <- rowsum(mat, bin_index) / bin_width
+    data.table(group = g, pos = bin_pos, value = rowMeans(binned), n = sum(ok))
+  }))
+  if (is.null(out) || nrow(out) == 0) {
+    return(NULL)
+  }
+  # Enrichment over the random distal regions of this same sample
+  base <- mean(out[group == "Random distal regions"]$value, na.rm = TRUE)
+  out[, value := if (is.finite(base) && base > 0) value / base else NA_real_]
+  out[, sample := sample_id]
+  saveRDS(out, cache)
+  out
+}
+
+inv_primary <- inventory[mark == mark.primary][!duplicated(bedFile)]
+inv_primary <- inv_primary[match(map$bedFile, bedFile)][!is.na(bedFile)]
+log_info("Reading ", nrow(inv_primary), " ", mark.primary, " bigwigs for the profiles")
+profiles <- rbindlist(Filter(Negate(is.null), mclapply(seq_len(nrow(inv_primary)), function(i) {
+  profile_for(inv_primary$path[i], inv_primary$bedFile[i])
+}, mc.cores = n.cores)))
+
+if (nrow(profiles) == 0) {
+  log_warn("No profile could be computed")
+} else {
+  profiles[, cellTypeGroup := map$cellTypeGroup[match(sample, map$bedFile)]]
+  log_info(
+    "Profiles over ", uniqueN(profiles$sample), " samples, peak enrichment ",
+    round(max(profiles[group != "Random distal regions"]$value, na.rm = TRUE), 2)
+  )
+  write.csv(profiles, file.path(mixed.dir, "bp_chip_profiles.csv"), row.names = FALSE)
+}
+
+#####################################################################
 # Everything the figure script needs
 #####################################################################
 
@@ -332,6 +510,9 @@ saveRDS(
     map = map,
     motif_set = motif_set,
     correlations = cor_tab,
+    examples = examples,
+    profiles = profiles,
+    profile.window = profile.window,
     mark.primary = mark.primary,
     marks = names(signals),
     standardised = standardise.per.sample
