@@ -171,10 +171,13 @@ foot_colors <- c(
   "Tcell" = unname(eo_colors[["Observed_Tcell"]])
 )
 
-# Where the variance of the expectation sits
+# Where the variance of the expectation sits. The first is the part a per
+# motif standardisation removes, the other two are what only the correction
+# can take out, and the interaction is the larger of them
 var_source_colors <- c(
   "Same in every sample" = "#B5A38A",
-  "Varies between samples" = "#C2377C"
+  "Motif by sample" = "#C2377C",
+  "Whole sample shift" = "#E39BBE"
 )
 
 # Illustrator sees every opaque panel, plot and legend background as its own
@@ -572,12 +575,15 @@ ss_total <- sum((exp_mat - exp_grand)^2, na.rm = TRUE)
 ss_motif <- ncol(exp_mat) * sum((rowMeans(exp_mat, na.rm = TRUE) - exp_grand)^2, na.rm = TRUE)
 ss_sample <- nrow(exp_mat) * sum((colMeans(exp_mat, na.rm = TRUE) - exp_grand)^2, na.rm = TRUE)
 
-# Two bars rather than three. The question the panel answers is how much of
-# the expectation is a per motif constant, which standardising removes, and
-# how much is not, which is the part only the correction can take out
+# Three plain bars. Stacking them was what overprinted the labels, and the
+# split is easier to read side by side than as segments of one bar
 var_tab <- data.frame(
-  source = factor(names(var_source_colors), levels = names(var_source_colors)),
-  frac = c(ss_motif, ss_total - ss_motif) / ss_total
+  source = factor(names(var_source_colors), levels = rev(names(var_source_colors))),
+  frac = c(
+    ss_motif,
+    max(ss_total - ss_motif - ss_sample, 0),
+    ss_sample
+  ) / ss_total
 )
 
 sd_within <- median(apply(exp_mat, 1, sd, na.rm = TRUE), na.rm = TRUE)
@@ -586,12 +592,11 @@ sd_dev <- median(
   na.rm = TRUE
 )
 log_info(
-  "Expected score variance: same in every sample ",
-  round(100 * var_tab$frac[1], 1), "%, varies between samples ",
-  round(100 * var_tab$frac[2], 1), "% (of which ",
-  round(100 * ss_sample / ss_total, 1), "% is a whole sample shift and ",
-  round(100 * max(ss_total - ss_motif - ss_sample, 0) / ss_total, 1),
-  "% is motif by sample)"
+  "Expected score variance: ",
+  paste(as.character(var_tab$source), paste0(round(100 * var_tab$frac, 1), "%"),
+    sep = " = ", collapse = ", "
+  ),
+  ". Everything but the first survives a per motif standardisation"
 )
 log_info(
   "Median s.d. across samples within a motif: expected ", signif(sd_within, 3),
@@ -608,16 +613,19 @@ p_expvar <- ggplot(var_tab, aes(x = frac, y = source, fill = source)) +
     hjust = -0.15, size = 3
   ) +
   scale_fill_manual(values = var_source_colors, guide = "none") +
-  # The two bars are the two halves of one whole, so the percentages on them
-  # are the whole message and an axis running to 100 only adds empty space
-  scale_x_continuous(expand = expansion(mult = c(0, 0.25))) +
+  # Neither bar passes 60%, so the scale stops there rather than running to
+  # 100 and leaving most of the panel empty
+  scale_x_continuous(
+    breaks = seq(0, 0.6, 0.2),
+    labels = function(x) paste0(round(100 * x), "%"),
+    expand = expansion(mult = c(0, 0.2))
+  ) +
   labs(title = "Expected score variance", x = NULL, y = NULL) +
   theme_classic(base_size = base.size) +
   theme(
     plot.title = element_text(hjust = 0, face = "plain", size = base.size),
-    axis.line = element_blank(),
-    axis.ticks = element_blank(),
-    axis.text.x = element_blank()
+    axis.line.y = element_blank(),
+    axis.ticks.y = element_blank()
   )
 
 #####################################################################

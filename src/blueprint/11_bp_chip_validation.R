@@ -42,6 +42,10 @@ site.window <- 200L
 # and leaves the motif to motif structure the correlations are meant to test
 standardise.per.sample <- TRUE
 
+# Every motif that carries a deviation and a VIPER regulon, rather than the
+# integration hits against a sample of the rest. The set still records which
+# is which, it is simply no longer the thing that defines the pool
+use.all.motifs <- TRUE
 background.n <- 50L
 
 # The aggregate signal profile: the conventional way to show a ChIP result,
@@ -187,8 +191,11 @@ log_info(
 integration <- fread(integration.file)
 hits <- unique(integration[in_heatmap == TRUE]$motif)
 pool <- setdiff(unique(integration$motif), hits)
-background <- sample(pool, min(background.n, length(pool)))
-log_info(length(hits), " integration motifs, ", length(background), " background motifs")
+background <- if (use.all.motifs) pool else sample(pool, min(background.n, length(pool)))
+log_info(
+  length(hits), " integration motifs, ", length(background), " other motifs",
+  if (use.all.motifs) " (every paired motif)" else ""
+)
 
 motif_set <- data.table(
   motif = c(hits, background),
@@ -240,8 +247,25 @@ log_info(
 # Mean signal per motif per sample, cached
 #####################################################################
 
+# The cached signal is only valid for the motif list it was computed on, so
+# the list goes into the file name. Without it, changing the motifs silently
+# returns the previous run's numbers
+motif_tag <- function(motifs) {
+  substr(
+    paste0(
+      length(motifs), "m",
+      sum(utf8ToInt(paste(sort(motifs), collapse = "")))
+    ),
+    1, 24
+  )
+}
+sites_tag <- motif_tag(motif_set$motif)
+log_info("Signal cache tag: ", sites_tag)
+
 signal_for <- function(path, mk, sample_id) {
-  cache <- file.path(cache.dir, paste0(sample_id, "_", mk, "_", motifSet, ".rds"))
+  cache <- file.path(
+    cache.dir, paste0(sample_id, "_", mk, "_", motifSet, "_", sites_tag, ".rds")
+  )
   if (file.exists(cache)) {
     return(readRDS(cache))
   }
@@ -427,12 +451,25 @@ profile_list <- lapply(seq_len(nrow(examples)), function(i) {
   if (length(gr) > profile.sites) gr <- gr[sample(length(gr), profile.sites)]
   profile_windows(gr, m)
 })
-rand <- enhancer[sample(length(enhancer), min(profile.random.n, length(enhancer)))]
-profile_list <- c(profile_list, list(profile_windows(rand, "Random distal regions")))
+
+# Distal regions are regulatory elements, so centring the control windows on
+# their midpoints centres them on their own peaks and the null comes out with
+# a peak in it. Random positions drawn uniformly inside the regions have no
+# such centre, which is what a null needs
+rand_regions <- enhancer[sample(length(enhancer), min(profile.random.n, length(enhancer)))]
+rand <- GRanges(
+  seqnames(rand_regions),
+  IRanges(
+    start = start(rand_regions) + floor(runif(length(rand_regions)) * width(rand_regions)),
+    width = 1
+  )
+)
+profile_list <- c(profile_list, list(profile_windows(rand, "Random distal positions")))
 profile_ranges <- sort(do.call(c, unname(profile_list)))
 profile_group <- factor(mcols(profile_ranges)$group,
-  levels = c(examples$motif, "Random distal regions")
+  levels = c(examples$motif, "Random distal positions")
 )
+profile_tag <- motif_tag(c(examples$motif, "rand"))
 log_info(
   length(profile_ranges), " profile windows of ", 2L * profile.window, " bp: ",
   paste(names(table(profile_group)), table(profile_group), sep = " = ", collapse = ", ")
@@ -443,7 +480,9 @@ bin_index <- rep(seq_len(profile.bins), each = bin_width)
 bin_pos <- (seq_len(profile.bins) - 0.5) * bin_width - profile.window
 
 profile_for <- function(path, sample_id) {
-  cache <- file.path(cache.dir, paste0(sample_id, "_", mark.primary, "_profile.rds"))
+  cache <- file.path(
+    cache.dir, paste0(sample_id, "_", mark.primary, "_profile_", profile_tag, ".rds")
+  )
   if (file.exists(cache)) {
     return(readRDS(cache))
   }
@@ -474,8 +513,14 @@ profile_for <- function(path, sample_id) {
   if (is.null(out) || nrow(out) == 0) {
     return(NULL)
   }
-  # Enrichment over the random distal regions of this same sample
-  base <- mean(out[group == "Random distal regions"]$value, na.rm = TRUE)
+  # Every profile of this sample is divided by the same number: the signal in
+  # the flanks of the random windows. That puts the sample on an enrichment
+  # scale without flattening the differences between cell types, which are
+  # the point, and leaves the random facet sitting at one
+  base <- mean(
+    out[group == "Random distal positions" & abs(pos) >= profile.window * 0.75]$value,
+    na.rm = TRUE
+  )
   out[, value := if (is.finite(base) && base > 0) value / base else NA_real_]
   out[, sample := sample_id]
   saveRDS(out, cache)

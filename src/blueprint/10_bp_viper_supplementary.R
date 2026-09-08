@@ -545,7 +545,7 @@ if (!file.exists(chip.file)) {
       labs(
         x = "Distance from the motif centre",
         y = sprintf(
-          "%s enrichment over random\ndistal regions, mean +/- s.e. of samples",
+          "%s enrichment over random distal\npositions, mean +/- s.e. of samples",
           mark.primary
         )
       ) +
@@ -567,26 +567,14 @@ if (!file.exists(chip.file)) {
   #############################################################
 
   primary[, coherent := r_mtfr < 0 & r_viper > 0]
-  primary[, stratum := fifelse(
-    r_mtfr_viper < 0,
-    "methylTFR opposite VIPER", "methylTFR with VIPER"
-  )]
-  primary[, stratum := factor(stratum,
-    levels = c("methylTFR opposite VIPER", "methylTFR with VIPER")
-  )]
-
-  strat <- table(primary$stratum, factor(primary$coherent, levels = c(FALSE, TRUE)))
-  strat_p <- if (all(dim(strat) == c(2, 2)) && min(rowSums(strat)) > 0) {
-    suppressWarnings(fisher.test(strat)$p.value)
-  } else {
-    NA_real_
-  }
   ct <- suppressWarnings(cor.test(primary$r_mtfr, primary$r_viper))
 
+  # Splitting the panel in two made the reader hold two pictures at once for
+  # one claim. The motif's own methylTFR against VIPER relationship is now a
+  # colour, so the same structure is visible in a single scatter
   log_info(
-    "Coherent quadrant by stratum: ",
-    paste(rownames(strat), strat[, "TRUE"], "of", rowSums(strat), collapse = "; "),
-    ", Fisher p = ", signif(strat_p, 3)
+    nrow(primary[coherent == TRUE]), " of ", nrow(primary),
+    " motifs in the expected quadrant"
   )
   log_info(
     "Coupling of the two ChIP correlations: r = ", round(unname(ct$estimate), 3),
@@ -608,15 +596,7 @@ if (!file.exists(chip.file)) {
   )
 
   primary[, combined := abs(r_mtfr) + abs(r_viper)]
-  labelled <- primary[, .SD[order(-combined)][seq_len(min(.N, scatter.label.n))], by = stratum]
-
-  strat_lab <- data.table(
-    stratum = factor(rownames(strat), levels = levels(primary$stratum)),
-    label = sprintf(
-      "%d of %d motifs (%.0f%%)\nin the shaded quadrant",
-      strat[, "TRUE"], rowSums(strat), 100 * strat[, "TRUE"] / rowSums(strat)
-    )
-  )
+  labelled <- head(primary[order(-combined)], scatter.label.n)
 
   p_f <- ggplot(primary, aes(x = r_mtfr, y = r_viper)) +
     annotate("rect",
@@ -628,30 +608,33 @@ if (!file.exists(chip.file)) {
       method = "lm", formula = y ~ x, se = FALSE,
       colour = "grey35", linewidth = 0.5
     ) +
-    geom_point(aes(colour = set), size = 1.7, alpha = 0.85) +
+    geom_point(aes(colour = r_mtfr_viper), size = 1.9, alpha = 0.9) +
     geom_text_repel(
       data = labelled, aes(label = motif), size = 2.2,
       max.overlaps = Inf, segment.size = 0.2, show.legend = FALSE
     ) +
-    geom_text(
-      data = strat_lab, inherit.aes = FALSE,
-      aes(x = -Inf, y = -Inf, label = label),
-      hjust = -0.06, vjust = -0.4, size = 2.4, colour = "grey30"
+    annotate("text",
+      x = -Inf, y = -Inf, hjust = -0.06, vjust = -0.5, size = 2.5, colour = "grey30",
+      label = sprintf(
+        "%d of %d motifs (%.0f%%) in the shaded quadrant",
+        nrow(primary[coherent == TRUE]), nrow(primary),
+        100 * nrow(primary[coherent == TRUE]) / nrow(primary)
+      )
     ) +
-    facet_wrap(~stratum, nrow = 1) +
-    scale_colour_manual(values = set_colors, name = NULL) +
+    scale_colour_gradient2(
+      low = "#C2377C", mid = "grey85", high = "#2CA02C", midpoint = 0,
+      name = "methylTFR against\nVIPER, per motif"
+    ) +
     labs(
       x = sprintf(
-        "Pearson r, %s against the methylTFR deviation Z-score\nquadrant enrichment %s, overall r = %.2f (%s)",
-        mark.primary,
-        if (is.na(strat_p)) "p n.a." else paste0("p = ", format.pval(strat_p, digits = 2, eps = 1e-16)),
-        unname(ct$estimate),
+        "Pearson r, %s against the methylTFR deviation Z-score\nacross %d motifs, overall r = %.2f (%s)",
+        mark.primary, nrow(primary), unname(ct$estimate),
         paste0("p = ", format.pval(ct$p.value, digits = 2, eps = 1e-16))
       ),
       y = sprintf("Pearson r, %s against\nthe VIPER activity", mark.primary)
     ) +
     base_theme +
-    theme(legend.position = "bottom")
+    theme(legend.position = "right", legend.key.height = unit(8, "mm"))
 
   #############################################################
   # G) The same motifs, sample by sample
@@ -691,8 +674,10 @@ if (!file.exists(chip.file)) {
       ))
     }))
     examples[, motif_lab := factor(motif, levels = picked$motif)]
-    examples[, measure_lab := factor(measure,
-      levels = c("methylTFR deviation Z-score", "VIPER activity")
+    # Short row labels, the long ones were clipped by the strip
+    examples[, measure_lab := factor(
+      fifelse(measure == "VIPER activity", "VIPER", "methylTFR"),
+      levels = c("methylTFR", "VIPER")
     )]
     r_lab <- unique(examples[, .(motif_lab, measure_lab, r)])
 
@@ -707,17 +692,17 @@ if (!file.exists(chip.file)) {
         aes(x = -Inf, y = Inf, label = sprintf("r = %.2f", r)),
         hjust = -0.2, vjust = 1.4, size = 2.6, colour = "grey25"
       ) +
-      facet_grid(measure_lab ~ motif_lab, scales = "free_y", switch = "y") +
+      facet_grid(measure_lab ~ motif_lab, scales = "free_y") +
       scale_colour_manual(values = cell_type_colors, name = NULL, drop = TRUE) +
       labs(
         x = sprintf(
           "%s signal at the motif's distal sites, per sample\n(standardised across motifs within each sample)",
           mark.primary
         ),
-        y = NULL
+        y = "Modality value, per sample"
       ) +
       base_theme +
-      theme(legend.position = "bottom", strip.placement = "outside")
+      theme(legend.position = "bottom")
   }
 
   #############################################################
@@ -764,9 +749,9 @@ build_row <- function(items) {
 row_specs <- list(
   list(items = list(list(p_a, 1), list(p_b, 1.5)), height = 1),
   list(items = list(list(p_c, 1), list(p_d, 1)), height = 1),
-  list(items = list(list(p_e, 1)), height = 1.05),
-  list(items = list(list(p_f, 1)), height = 1.15),
-  list(items = list(list(p_g, 1)), height = 1.3)
+  list(items = list(list(p_e, 1)), height = 1.25),
+  list(items = list(list(p_f, 1)), height = 1.4),
+  list(items = list(list(p_g, 1)), height = 1.5)
 )
 
 rows <- list()
@@ -782,7 +767,7 @@ supplementary <- wrap_plots(rows, ncol = 1, heights = heights) & tag_theme
 
 file <- file.path(fig.dir, "blueprint_viper_supplementary.pdf")
 ggsave(file, supplementary & no_bg,
-  width = fig.width, height = fig.height * sum(heights) / 5.5,
+  width = fig.width, height = 3.4 * sum(heights),
   bg = "transparent", limitsize = FALSE
 )
 log_success("Wrote ", file)

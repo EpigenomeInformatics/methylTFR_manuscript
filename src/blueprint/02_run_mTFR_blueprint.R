@@ -19,7 +19,7 @@ suppressPackageStartupMessages({
 set.seed(42)
 
 # Motif sets to run, names are lower case in the new annotation package
-motifSetList <- c("jaspar2020", "jaspar2020_distal")
+motifSetList <- c("jaspar2020", "jaspar2020_distal","altius")
 num.cores <- 32
 chunk.size <- 10
 
