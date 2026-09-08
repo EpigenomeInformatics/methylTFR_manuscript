@@ -9,11 +9,10 @@
 #      split by whether the factor is expressed at all
 #   C  Cell type variance carried by TF mRNA and by VIPER activity
 #   D  Agreement of each of the two with the methylTFR deviations
-#   E  Aggregate H3K27ac profile around the motif centres, per cell type,
-#      against random distal regions
-#   F  Histone ChIP agreement with both modalities, split by whether the
-#      two modalities run opposite for that motif
-#   G  The same motifs sample by sample, against each modality
+#   E  Per motif correlation of the H3K27ac signal with each modality
+#   F  Aggregate H3K27ac profile around the motif centres, per cell type,
+#      against random distal positions
+#   G  Three motifs sample by sample, against each modality
 #
 # The expected deviation scores themselves live in the Blueprint
 # supplementary, they are a property of the algorithm rather than of the
@@ -57,7 +56,6 @@ n.bins <- 10
 
 # The example motifs are chosen in 11, where the profiles are computed for
 # exactly those windows, so the two halves of the ChIP story stay in step
-scatter.label.n <- 6L
 
 drop.cell.types <- c("other", "thymocyte")
 min.samples.per.celltype <- 3
@@ -75,6 +73,8 @@ group_colors <- c(
 )
 source_colors <- c("TF mRNA" = "#B5A38A", "VIPER activity" = "#6BC75A")
 set_colors <- c("Integration motifs" = "#C2377C", "Background motifs" = "#B5A38A")
+# The fitted line, in one colour that is not a cell type
+fit_colour <- "#D62728"
 
 cell_type_labels <- c(
   "megK" = "Megakaryocytes", "eryt" = "Erythrocytes", "gran" = "Granulocytes",
@@ -467,7 +467,7 @@ write.csv(tf_tab, file.path(mixed.dir, "bp_viper_vs_expression_celltype_R2.csv")
 # E to G) Histone ChIP, only if 11 has been run
 #####################################################################
 
-p_e <- p_f <- p_g <- NULL
+p_dist <- p_e <- p_g <- NULL
 
 if (!file.exists(chip.file)) {
   log_warn("No ChIP signal at ", chip.file, ", panels E to G are skipped. Run 11 first")
@@ -566,75 +566,157 @@ if (!file.exists(chip.file)) {
   # such expectation holds, and the fitted lines duly run opposite ways
   #############################################################
 
-  primary[, coherent := r_mtfr < 0 & r_viper > 0]
-  ct <- suppressWarnings(cor.test(primary$r_mtfr, primary$r_viper))
+  # The axes are the measurements themselves rather than two correlations,
+  # one point per motif per cell type. Correlating across the motifs inside a
+  # cell type also rests on about two hundred points instead of the thirty
+  # five samples a per motif correlation has
+  chip_mat_f <- chip$signals[[mark.primary]]
+  f_samples <- colnames(chip_mat_f)
+  f_types <- factor(
+    unname(cell_type_labels[chip_map$cellTypeGroup[match(f_samples, chip_map$bedFile)]]),
+    levels = cell_type_levels
+  )
+  f_rna <- chip_map$rna_id[match(f_samples, chip_map$bedFile)]
+  f_motifs <- intersect(rownames(chip_mat_f), rownames(mtfr_z))
+  f_tf <- setNames(chip_cor$viper_tf[match(f_motifs, chip_cor$motif)], f_motifs)
 
-  # Splitting the panel in two made the reader hold two pictures at once for
-  # one claim. The motif's own methylTFR against VIPER relationship is now a
-  # colour, so the same structure is visible in a single scatter
-  log_info(
-    nrow(primary[coherent == TRUE]), " of ", nrow(primary),
-    " motifs in the expected quadrant"
+  cell_tab <- rbindlist(lapply(levels(droplevels(f_types)), function(g) {
+    idx <- which(f_types == g)
+    if (length(idx) == 0) {
+      return(NULL)
+    }
+    data.table(
+      motif = f_motifs,
+      celltype = g,
+      chip = rowMeans(chip_mat_f[f_motifs, idx, drop = FALSE], na.rm = TRUE),
+      mtfr = rowMeans(mtfr_z[f_motifs, f_samples[idx], drop = FALSE], na.rm = TRUE),
+      viper = vapply(f_motifs, function(m) {
+        tf <- f_tf[[m]]
+        if (is.na(tf) || !tf %in% rownames(viper_act)) {
+          return(NA_real_)
+        }
+        mean(as.numeric(viper_act[tf, f_rna[idx]]), na.rm = TRUE)
+      }, numeric(1), USE.NAMES = FALSE)
+    )
+  }))
+  cell_tab[, celltype := factor(celltype, levels = cell_type_levels)]
+  cell_tab <- merge(cell_tab, chip_cor[mark == mark.primary, .(motif, set)],
+    by = "motif", all.x = TRUE
+  )
+
+  # Each motif is centred on its own average over the cell types. Without
+  # this the comparison is dominated by whether a motif sits in open
+  # chromatin at all, which is the same in every cell type and has nothing
+  # to do with the question. Centred, the axes read as how far this cell
+  # type departs from that motif's own baseline
+  cell_tab[, `:=`(
+    chip_c = chip - mean(chip, na.rm = TRUE),
+    mtfr_c = mtfr - mean(mtfr, na.rm = TRUE),
+    viper_c = viper - mean(viper, na.rm = TRUE)
+  ), by = motif]
+  write.csv(cell_tab, file.path(mixed.dir, "bp_chip_by_celltype.csv"), row.names = FALSE)
+
+  cor_by_type <- rbindlist(lapply(c("mtfr_c", "viper_c"), function(v) {
+    cell_tab[, .(
+      modality = if (v == "mtfr_c") "methylTFR deviation" else "VIPER activity",
+      r = suppressWarnings(cor(chip_c, get(v), use = "complete.obs"))
+    ), by = celltype]
+  }))
+  cor_by_type[, modality := factor(modality,
+    levels = c("methylTFR deviation", "VIPER activity")
+  )]
+  pooled <- c(
+    mtfr = suppressWarnings(cor(cell_tab$chip_c, cell_tab$mtfr_c, use = "complete.obs")),
+    viper = suppressWarnings(cor(cell_tab$chip_c, cell_tab$viper_c, use = "complete.obs"))
   )
   log_info(
-    "Coupling of the two ChIP correlations: r = ", round(unname(ct$estimate), 3),
-    ", p = ", signif(ct$p.value, 3)
+    "Motif centred, across motifs within a cell type: ",
+    paste(cor_by_type$modality, cor_by_type$celltype,
+      round(cor_by_type$r, 3),
+      sep = " / ", collapse = "; "
+    )
   )
   log_info(
-    "Integration motifs in the quadrant ",
-    nrow(primary[coherent == TRUE & set == "Integration motifs"]), " of ",
-    nrow(primary[set == "Integration motifs"]), ", background ",
-    nrow(primary[coherent == TRUE & set == "Background motifs"]), " of ",
-    nrow(primary[set == "Background motifs"]),
-    ", which is the split that does not separate"
+    "Motif centred, pooled over every motif and cell type: methylTFR ",
+    round(pooled[["mtfr"]], 3), ", VIPER ", round(pooled[["viper"]], 3)
+  )
+  # Kept in the log rather than the figure: the per motif correlations across
+  # samples, which is the weaker of the two ways to ask this
+  coupling <- suppressWarnings(cor.test(primary$r_mtfr, primary$r_viper))
+  log_info(
+    "Per motif across samples, coupling of the two ChIP correlations: r = ",
+    round(unname(coupling$estimate), 3), ", p = ", signif(coupling$p.value, 3)
   )
   log_info(
     "Within cell type, median r: methylTFR ",
     round(median(primary$r_mtfr_within, na.rm = TRUE), 3), ", VIPER ",
-    round(median(primary$r_viper_within, na.rm = TRUE), 3),
-    ". The agreement is between lineages, not within them"
+    round(median(primary$r_viper_within, na.rm = TRUE), 3)
   )
 
-  primary[, combined := abs(r_mtfr) + abs(r_viper)]
-  labelled <- head(primary[order(-combined)], scatter.label.n)
+  # Only motifs the integration heatmap shows are named, and once per motif
+  # at its average position rather than once per cell type
+  # The across motif analysis above showed no consistent relationship in any
+  # cell type, so it stays in the log and the table rather than the figure.
+  # What the figure shows instead is the per motif correlation across
+  # samples, one distribution per modality, tested against zero
+  dist_long <- melt(
+    primary[, .(motif,
+      `methylTFR deviation` = r_mtfr, `VIPER activity` = r_viper
+    )],
+    id.vars = "motif", variable.name = "modality", value.name = "r"
+  )
+  dist_long <- dist_long[is.finite(r)]
 
-  p_f <- ggplot(primary, aes(x = r_mtfr, y = r_viper)) +
-    annotate("rect",
-      xmin = -Inf, xmax = 0, ymin = 0, ymax = Inf, fill = "grey92", alpha = 0.6
-    ) +
+  dist_p <- p.adjust(vapply(levels(dist_long$modality), function(m) {
+    x <- dist_long[modality == m]$r
+    if (length(x) < 3) NA_real_ else suppressWarnings(wilcox.test(x, mu = 0)$p.value)
+  }, numeric(1)), method = "BH")
+
+  dist_lab <- dist_long[, .(median = median(r, na.rm = TRUE), n = .N), by = modality]
+  dist_lab[, label := sprintf(
+    "median %.2f\n%s", median,
+    ifelse(is.na(dist_p[as.character(modality)]), "p.adj n.a.",
+      paste0("p.adj = ", format.pval(dist_p[as.character(modality)],
+        digits = 2, eps = 1e-16
+      ))
+    )
+  )]
+  log_info(
+    "Per motif correlation with the ", mark.primary, " signal: ",
+    paste(dist_lab$modality, sprintf(
+      "median %.3f, n = %d, p.adj = %s", dist_lab$median, dist_lab$n,
+      signif(dist_p[as.character(dist_lab$modality)], 3)
+    ), sep = ", ", collapse = "; ")
+  )
+
+  p_dist <- ggplot(dist_long, aes(x = modality, y = r, fill = modality)) +
     geom_hline(yintercept = 0, linetype = "dotted", colour = "grey50") +
-    geom_vline(xintercept = 0, linetype = "dotted", colour = "grey50") +
-    geom_smooth(
-      method = "lm", formula = y ~ x, se = FALSE,
-      colour = "grey35", linewidth = 0.5
+    stat_boxplot(geom = "errorbar", width = 0.3, linewidth = 0.5) +
+    geom_boxplot(colour = "black", outlier.shape = NA, width = 0.55) +
+    geom_jitter(width = 0.15, size = 0.6, alpha = 0.4, colour = "grey20") +
+    geom_text(
+      data = dist_lab, inherit.aes = FALSE,
+      aes(x = modality, y = max(dist_long$r, na.rm = TRUE) * 1.08, label = label),
+      vjust = 0, size = 2.6
     ) +
-    geom_point(aes(colour = r_mtfr_viper), size = 1.9, alpha = 0.9) +
-    geom_text_repel(
-      data = labelled, aes(label = motif), size = 2.2,
-      max.overlaps = Inf, segment.size = 0.2, show.legend = FALSE
+    scale_fill_manual(
+      values = c(
+        "methylTFR deviation" = "#ED4B4A", "VIPER activity" = "#6BC75A"
+      ),
+      guide = "none"
     ) +
-    annotate("text",
-      x = -Inf, y = -Inf, hjust = -0.06, vjust = -0.5, size = 2.5, colour = "grey30",
-      label = sprintf(
-        "%d of %d motifs (%.0f%%) in the shaded quadrant",
-        nrow(primary[coherent == TRUE]), nrow(primary),
-        100 * nrow(primary[coherent == TRUE]) / nrow(primary)
+    scale_y_continuous(expand = expansion(mult = c(0.05, 0.28))) +
+    labs(
+      x = sprintf("n = %d motifs", uniqueN(dist_long$motif)),
+      y = sprintf(
+        "Pearson r with the %s signal,\nacross samples within a motif", mark.primary
       )
     ) +
-    scale_colour_gradient2(
-      low = "#C2377C", mid = "grey85", high = "#2CA02C", midpoint = 0,
-      name = "methylTFR against\nVIPER, per motif"
-    ) +
-    labs(
-      x = sprintf(
-        "Pearson r, %s against the methylTFR deviation Z-score\nacross %d motifs, overall r = %.2f (%s)",
-        mark.primary, nrow(primary), unname(ct$estimate),
-        paste0("p = ", format.pval(ct$p.value, digits = 2, eps = 1e-16))
-      ),
-      y = sprintf("Pearson r, %s against\nthe VIPER activity", mark.primary)
-    ) +
-    base_theme +
-    theme(legend.position = "right", legend.key.height = unit(8, "mm"))
+    base_theme
+
+  # Three named motifs per facet, ranked by how far they sit from their own
+  # average, and each motif named only once per modality so the same AP-1
+  # dimers do not fill every panel
 
   #############################################################
   # G) The same motifs, sample by sample
@@ -684,7 +766,7 @@ if (!file.exists(chip.file)) {
     p_g <- ggplot(examples, aes(x = chip, y = value)) +
       geom_smooth(
         method = "lm", formula = y ~ x, se = FALSE,
-        colour = "grey40", linewidth = 0.5
+        colour = fit_colour, linewidth = 0.7
       ) +
       geom_point(aes(colour = celltype), size = 1.6, alpha = 0.9) +
       geom_text(
@@ -748,9 +830,8 @@ build_row <- function(items) {
 
 row_specs <- list(
   list(items = list(list(p_a, 1), list(p_b, 1.5)), height = 1),
-  list(items = list(list(p_c, 1), list(p_d, 1)), height = 1),
+  list(items = list(list(p_c, 1), list(p_d, 1), list(p_dist, 1)), height = 1.1),
   list(items = list(list(p_e, 1)), height = 1.25),
-  list(items = list(list(p_f, 1)), height = 1.4),
   list(items = list(list(p_g, 1)), height = 1.5)
 )
 

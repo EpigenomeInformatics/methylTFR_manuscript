@@ -3,8 +3,10 @@
 #####################################################################
 # test_altius.R
 # created on 08-09-2026 by Irem B Gunduz
-# Footprints of the AP-1 archetypes of the Altius set, one panel per
-# motif, one line per cell type. Nothing is read from the deviations.
+# Footprints of the AP-1 archetypes of the Altius set. Top row is the
+# observed profile against the expected one, bottom row is observed
+# minus expected with the flanks set to zero, the way the main figure
+# draws it. Nothing is read from the deviations.
 #####################################################################
 
 suppressPackageStartupMessages({
@@ -20,6 +22,13 @@ suppressPackageStartupMessages({
 motifSet <- "altius"
 motifs <- c("ap1_1", "ap1_2")
 plot.window <- 200L
+
+# The flanks are the baseline of the difference curve, so it starts from
+# zero away from the motif, as in the main figure
+flank.norm <- 30L
+# The number printed next to each cell type is the mean of the difference
+# curve over this centre window
+centre.window <- 25L
 
 group_colors <- c(
   "Bcell_naive" = "#C46B8C",
@@ -63,10 +72,10 @@ if (length(msites) == 0) stop("No known cell type in the cache")
 log_info("Cell types: ", paste(names(msites), collapse = ", "))
 
 #####################################################################
-# One panel per motif
+# One footprint per motif, drawn two ways
 #####################################################################
 
-panel <- function(motif) {
+footprint <- function(motif) {
   df <- rbindlist(Filter(Negate(is.null), lapply(names(msites), function(g) {
     d <- tryCatch(
       plotExpectedFootprint(
@@ -87,15 +96,23 @@ panel <- function(motif) {
     d
   })))
   if (nrow(df) == 0) {
-    log_warn(motif, ": no footprint")
     return(NULL)
   }
-  present <- intersect(names(group_colors), unique(df$group))
-  df[, group := factor(group, levels = present)]
+  df[, group := factor(group, levels = intersect(names(group_colors), unique(group)))]
+  df
+}
 
+base_theme <- theme_classic(base_size = 10) +
+  theme(
+    plot.title = element_text(hjust = 0, face = "plain", size = 10),
+    legend.position = "bottom",
+    legend.key.size = unit(3.5, "mm")
+  )
+
+raw_panel <- function(df, motif) {
   ggplot(df, aes(x = x, y = avg_methyl, colour = group, linetype = type)) +
     geom_line(linewidth = 0.4) +
-    scale_colour_manual(values = group_colors[present], name = NULL) +
+    scale_colour_manual(values = group_colors[levels(df$group)], name = NULL) +
     scale_linetype_manual(
       values = c("Observed" = "solid", "Expected" = "dashed"), name = NULL
     ) +
@@ -104,21 +121,56 @@ panel <- function(motif) {
       title = paste0(motif, " (", length(tf_bindsites[[motif]]), " sites)"),
       x = "Distance from motif centre", y = "Average methylation"
     ) +
-    theme_classic(base_size = 10) +
-    theme(
-      plot.title = element_text(hjust = 0, face = "plain", size = 10),
-      legend.position = "bottom",
-      legend.key.size = unit(3.5, "mm")
-    )
+    base_theme
 }
 
-panels <- Filter(Negate(is.null), lapply(motifs, panel))
-if (length(panels) == 0) stop("No footprint could be drawn")
+diff_panel <- function(df, motif) {
+  d <- df[, .(
+    avg_methyl = avg_methyl[type == "Observed"] - avg_methyl[type == "Expected"]
+  ), by = .(x, group)]
+
+  flank <- max(abs(d$x), na.rm = TRUE)
+  d[, avg_methyl := avg_methyl -
+    mean(avg_methyl[abs(x) >= flank - flank.norm], na.rm = TRUE), by = group]
+
+  centre <- d[abs(x) <= centre.window, .(dip = mean(avg_methyl, na.rm = TRUE)), by = group]
+  log_info(
+    motif, " centre of the difference curve: ",
+    paste(centre$group, round(centre$dip, 3), sep = " = ", collapse = ", ")
+  )
+
+  present <- levels(droplevels(d$group))
+  labels <- paste0(present, " (", format(round(centre$dip[match(present, centre$group)], 2),
+    nsmall = 2
+  ), ")")
+  d[, group := factor(labels[match(as.character(group), present)], levels = labels)]
+  colours <- setNames(unname(group_colors[present]), labels)
+
+  ggplot(d, aes(x = x, y = avg_methyl, colour = group)) +
+    geom_hline(yintercept = 0, linetype = "dotted", colour = "grey55") +
+    geom_line(linewidth = 0.4) +
+    scale_colour_manual(values = colours, name = NULL) +
+    coord_cartesian(xlim = c(-plot.window, plot.window)) +
+    labs(
+      title = paste0(motif, ", bias corrected"),
+      x = "Distance from motif centre",
+      y = "Methylation difference (Observed - Expected)"
+    ) +
+    base_theme
+}
+
+profiles <- lapply(motifs, footprint)
+names(profiles) <- motifs
+profiles <- Filter(Negate(is.null), profiles)
+if (length(profiles) == 0) stop("No footprint could be drawn")
+
+panels <- c(
+  lapply(names(profiles), function(m) raw_panel(profiles[[m]], m)),
+  lapply(names(profiles), function(m) diff_panel(profiles[[m]], m))
+)
 
 file <- file.path(fig.dir, paste0("test_", motifSet, "_ap1_footprints.pdf"))
-ggsave(file,
-  wrap_plots(panels, ncol = length(panels), guides = "collect") &
-    theme(legend.position = "bottom"),
-  width = 6 * length(panels), height = 4.5, bg = "transparent"
+ggsave(file, wrap_plots(panels, ncol = length(profiles)),
+  width = 6 * length(profiles), height = 9, bg = "transparent"
 )
 log_success("Wrote ", file)

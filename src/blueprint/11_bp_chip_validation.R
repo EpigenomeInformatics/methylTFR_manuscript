@@ -58,8 +58,8 @@ profile.random.n <- 500L
 # Ordered preference. The first available ones are taken, anything missing is
 # reported and the remaining slots fall back to the automatic pick
 profile.motifs <- c(
-  "FOSL2::JUNB", "SPIB",
-  "MAFB", "MAF", "NR1H3::RXRA", "CEBPB", "SPI1"
+  "FOSL2::JUNB", "SPIB", "CEBPB",
+  "MAFB", "MAF", "NR1H3::RXRA", "SPI1"
 )
 profile.motifs.n <- 3L
 
