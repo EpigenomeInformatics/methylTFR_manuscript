@@ -12,6 +12,8 @@
 #   F  PCA of the B and T cell subsets
 #   G  Observed and expected footprints of two motifs, B and T cells
 #   H  B versus T differential, one marker motif per lineage
+#   I  PCA of the Altius deviations, with the cell type R2
+#   J  Altius AP-1 and CEBP differentials across the cell type groups
 #####################################################################
 
 suppressPackageStartupMessages({
@@ -34,6 +36,7 @@ set.seed(42)
 
 motifSet.distal <- "jaspar2020_distal"
 motifSet.genome <- "jaspar2020"
+motifSet.altius <- "altius"
 tfSet <- "jaspar2020"
 
 drop.cell.types <- "Other"
@@ -54,6 +57,7 @@ pca.zscore <- TRUE
 # so the two can differ. set is "distal" or "genome"
 pca.panelA <- list(set = "distal", corrected = FALSE)
 pca.panelB <- list(set = "genome", corrected = TRUE)
+pca.panelI <- list(set = "altius", corrected = TRUE)
 # The share of a component's variance that cell type accounts for, printed
 # under each title. The two panels use different motif sets, so the numbers
 # describe each panel rather than comparing them. Set FALSE to leave it out
@@ -62,7 +66,7 @@ pca.show.r2 <- TRUE
 # Canvas. A4 squeezed the three column rows, so the figure is drawn larger
 # and scaled down at layout time instead
 fig.width <- 16
-fig.height <- 18
+fig.height <- 24
 base.size <- 10
 ellipse.level <- 0.9
 
@@ -76,6 +80,10 @@ footprint.motifs.EO <- c("FOSL1::JUND", "SPI1")
 # Panel H, one motif per lineage
 footprint.motif.B <- "BATF"
 footprint.motif.T <- "PAX1"
+# Panel J, the Altius archetypes drawn across the cell type groups of the
+# main figure, with the naive B cells left out
+altius.motifs <- c("ap1_1", "ccaat_cebp")
+altius.group.order <- c("Monocytes", "Granulocytes", "Bcell_mem", "Tcell")
 flank.norm <- 30
 
 distal.file <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFRAnnotationHg38_old/inst/extdata/distal_regions.RDS"
@@ -89,6 +97,7 @@ rnb.set.path <- file.path(analysis.dir, rnb.tag, "reports", "data_import_data", 
 sannot.file <- file.path(analysis.dir, rnb.tag, "reports", "data_import_data", "annotation.csv")
 dev.file.distal <- file.path(analysis.dir, dev.tag, paste0(motifSet.distal, "_deviations.RDS"))
 dev.file.genome <- file.path(analysis.dir, dev.tag, paste0(motifSet.genome, "_deviations.RDS"))
+dev.file.altius <- file.path(analysis.dir, dev.tag, paste0(motifSet.altius, "_deviations.RDS"))
 
 cache.dir <- file.path(analysis.dir, "debug")
 if (!dir.exists(cache.dir)) dir.create(cache.dir, recursive = TRUE)
@@ -169,6 +178,14 @@ foot_colors <- c(
   "Bcell_naive" = unname(eo_colors[["Observed_Bcell_naive"]]),
   "Bcell_mem" = unname(eo_colors[["Observed_Bcell_mem"]]),
   "Tcell" = unname(eo_colors[["Observed_Tcell"]])
+)
+
+# Panel J, the group colours the main figure uses
+altius_colors <- c(
+  "Monocytes" = "#C2703D",
+  "Granulocytes" = "#E8A33D",
+  "Bcell_mem" = "#7B1E3D",
+  "Tcell" = "#4FC3D9"
 )
 
 # Where the variance of the expectation sits. The first is the part a per
@@ -361,17 +378,18 @@ fmt <- function(x) ifelse(is.na(x), "NA", format(round(x, 2), nsmall = 2))
 # 1.00 for every group and hide the differences between them
 fmt3 <- function(x) ifelse(is.na(x), "NA", format(round(x, 3), nsmall = 3))
 
-footprint_data <- function(motif, msites) {
+footprint_data <- function(motif, msites, bindsites = tf_bindsites,
+                          gcfreq = gcfreqs, enh = enhancer) {
   per_group <- lapply(names(msites), function(g) {
     df <- tryCatch(
       plotExpectedFootprint(
         motif = motif,
-        tf_bindsites = tf_bindsites,
+        tf_bindsites = bindsites,
         msites = msites[[g]],
         sample_name = g,
         gc_dist = gc_dist,
-        gcfreqs = gcfreqs,
-        enhancer = enhancer,
+        gcfreqs = gcfreq,
+        enhancer = enh,
         returnPlotData = TRUE
       )$plotDF,
       error = function(e) {
@@ -397,26 +415,34 @@ footprint_data <- function(motif, msites) {
 # Annotation and deviations
 #####################################################################
 
-for (f in c(dev.file.distal, dev.file.genome)) {
+for (f in c(dev.file.distal, dev.file.genome, dev.file.altius)) {
   if (!file.exists(f)) stop("Missing input: ", f, ". Run 02 first")
 }
 
 sannot <- read.csv(sannot.file, stringsAsFactors = FALSE)
 sannot$bedFile <- as.character(sannot$bedFile)
 
-dev_distal <- readRDS(dev.file.distal)
-dev_genome <- readRDS(dev.file.genome)
+dev_sets <- list(
+  distal = readRDS(dev.file.distal),
+  genome = readRDS(dev.file.genome),
+  altius = readRDS(dev.file.altius)
+)
+set_labels <- c(
+  distal = "JASPAR2020 distal", genome = "JASPAR2020", altius = "Altius"
+)
 
-for (nm in c("distal", "genome")) {
-  obj <- if (nm == "distal") dev_distal else dev_genome
-  if (!"expected" %in% SummarizedExperiment::assayNames(obj)) {
+for (nm in names(dev_sets)) {
+  if (!"expected" %in% SummarizedExperiment::assayNames(dev_sets[[nm]])) {
     stop("The ", nm, " deviations carry no expected assay, panel A cannot be drawn")
   }
 }
-uncorrected_distal <- deviations(dev_distal) +
-  SummarizedExperiment::assay(dev_distal, "expected")
-uncorrected_genome <- deviations(dev_genome) +
-  SummarizedExperiment::assay(dev_genome, "expected")
+uncorrected_sets <- lapply(dev_sets, function(d) {
+  deviations(d) + SummarizedExperiment::assay(d, "expected")
+})
+
+dev_distal <- dev_sets$distal
+dev_altius <- dev_sets$altius
+uncorrected_distal <- uncorrected_sets$distal
 
 # Healthy samples with a mappable cell type
 ann_ok <- !is.na(sannot$DISEASE) & sannot$DISEASE == "None" &
@@ -425,52 +451,53 @@ mapped <- unname(group_remap[sannot$cellTypeGroup])
 ann_ok[which(ann_ok & mapped %in% drop.cell.types)] <- FALSE
 
 healthy <- sannot$bedFile[which(ann_ok)]
-samples_genome <- intersect(healthy, colnames(deviations(dev_genome)))
-samples_distal <- intersect(healthy, colnames(deviations(dev_distal)))
+samples_sets <- lapply(dev_sets, function(d) {
+  intersect(healthy, colnames(deviations(d)))
+})
+groups_sets <- lapply(samples_sets, function(s) {
+  unname(group_remap[sannot$cellTypeGroup[match(s, sannot$bedFile)]])
+})
+samples_distal <- samples_sets$distal
+samples_altius <- samples_sets$altius
 log_info(
-  length(samples_genome), " genome wide and ", length(samples_distal),
-  " distal samples after the annotation filter"
+  "Samples after the annotation filter: ",
+  paste(names(samples_sets), lengths(samples_sets), sep = " = ", collapse = ", ")
 )
 
-groups_genome <- unname(group_remap[
-  sannot$cellTypeGroup[match(samples_genome, sannot$bedFile)]
-])
-groups_distal <- unname(group_remap[
-  sannot$cellTypeGroup[match(samples_distal, sannot$bedFile)]
-])
-
 #####################################################################
-# A and B, PCA of the uncorrected and the corrected deviations
+# A, B and I, PCA of the uncorrected and the corrected deviations
 #####################################################################
 
 build_pca <- function(spec, tag) {
-  on_distal <- identical(spec$set, "distal")
-  mat <- if (on_distal) {
-    if (spec$corrected) deviations(dev_distal) else uncorrected_distal
+  mat <- if (spec$corrected) {
+    deviations(dev_sets[[spec$set]])
   } else {
-    if (spec$corrected) deviations(dev_genome) else uncorrected_genome
+    uncorrected_sets[[spec$set]]
   }
-  samples <- if (on_distal) samples_distal else samples_genome
-  groups <- if (on_distal) groups_distal else groups_genome
   label <- paste0(
     if (spec$corrected) "Bias corrected deviations (" else "Uncorrected deviations (",
-    if (on_distal) "JASPAR2020 distal" else "JASPAR2020", ")"
+    set_labels[[spec$set]], ")"
   )
   pca_panel(
-    mat[, samples, drop = FALSE], groups, cell_type_colors, label, tag,
-    zscore = pca.zscore, show.r2 = pca.show.r2
+    mat[, samples_sets[[spec$set]], drop = FALSE], groups_sets[[spec$set]],
+    cell_type_colors, label, tag, zscore = pca.zscore, show.r2 = pca.show.r2
   )
 }
 
 p_a <- build_pca(pca.panelA, "A")
 p_b <- build_pca(pca.panelB, "B")
+# I stands on its own row, so it carries its own key
+p_i <- build_pca(pca.panelI, "I") +
+  theme(legend.position = "bottom") +
+  guides(colour = guide_legend(nrow = 4, byrow = TRUE))
 
 #####################################################################
 # C, motif variability
 #####################################################################
 
-var_input <- if (variability.motifSet == motifSet.distal) dev_distal else dev_genome
-var_samples <- if (variability.motifSet == motifSet.distal) samples_distal else samples_genome
+var_set <- names(set_labels)[match(variability.motifSet, c(motifSet.distal, motifSet.genome, motifSet.altius))]
+var_input <- dev_sets[[var_set]]
+var_samples <- samples_sets[[var_set]]
 
 var_res <- computeZScoreVariability(
   deviations(var_input)[, var_samples, drop = FALSE],
@@ -661,6 +688,14 @@ tf_bindsites <- getTFbindsites(motifSet = tfSet)
 gcfreqs <- getGCfreq(motifSet = motifSet.distal)
 gc_dist <- getGenomeGC()
 
+# The Altius run is genome wide, so it takes no distal regions
+tf_bindsites_altius <- getTFbindsites(motifSet = motifSet.altius)
+gcfreqs_altius <- getGCfreq(motifSet = motifSet.altius)
+absent_altius <- setdiff(altius.motifs, names(tf_bindsites_altius))
+if (length(absent_altius) > 0) {
+  stop("Not in ", motifSet.altius, ": ", paste(absent_altius, collapse = ", "))
+}
+
 enhancer <- NULL
 if (motifSet.distal == "jaspar2020_distal") {
   if (!file.exists(distal.file)) stop("Distal regions file does not exist: ", distal.file)
@@ -757,10 +792,13 @@ p_e <- Filter(Negate(is.null), lapply(footprint.motifs.EO, eo_panel))
 # H, observed minus expected footprints of the two marker motifs
 #####################################################################
 
-diff_panel <- function(motif) {
-  df <- footprint_data(motif, msites_eo)
+diff_panel <- function(motif, msites = msites_eo, colours = foot_colors,
+                       dev_mat = deviations(dev_distal)[, samples_distal, drop = FALSE],
+                       dev_groups = short5, bindsites = tf_bindsites,
+                       gcfreq = gcfreqs, enh = enhancer) {
+  df <- footprint_data(motif, msites, bindsites, gcfreq, enh)
   if (is.null(df)) {
-    log_warn(motif, ": no footprint, panel H entry skipped")
+    log_warn(motif, ": no footprint, skipped")
     return(NULL)
   }
   df <- df[, .(
@@ -772,15 +810,13 @@ diff_panel <- function(motif) {
   df[, avg_methyl := avg_methyl -
     mean(avg_methyl[abs(x) >= flank - flank.norm], na.rm = TRUE), by = group]
 
-  groups_here <- names(msites_eo)
-  raw <- motif_group_means(
-    motif, deviations(dev_distal)[, samples_distal, drop = FALSE], short5, groups_here
-  )
+  groups_here <- names(msites)
+  raw <- motif_group_means(motif, dev_mat, dev_groups, groups_here)
 
-  present <- intersect(names(foot_colors), unique(df$group))
+  present <- intersect(names(colours), unique(df$group))
   group_label <- paste0(present, " (dev ", fmt(raw[present]), ")")
   df[, group := factor(group_label[match(group, present)], levels = group_label)]
-  colours_here <- setNames(unname(foot_colors[present]), group_label)
+  colours_here <- setNames(unname(colours[present]), group_label)
 
   ggplot(df, aes(x = x, y = avg_methyl, colour = group)) +
     geom_line(linewidth = 0.4) +
@@ -804,15 +840,36 @@ diff_panel <- function(motif) {
 p_f <- Filter(Negate(is.null), lapply(diff_motifs, diff_panel))
 
 #####################################################################
+# J, the Altius archetypes across the cell type groups
+#####################################################################
+
+msites_altius <- msites5[intersect(altius.group.order, names(msites5))]
+if (length(msites_altius) == 0) stop("None of the panel J groups are in the merged methylation")
+
+short5_altius <- map_cellType5Group(
+  sannot$cellTypeShort[match(samples_altius, sannot$bedFile)]
+)
+
+p_j <- Filter(Negate(is.null), lapply(altius.motifs, function(m) {
+  diff_panel(m,
+    msites = msites_altius, colours = altius_colors,
+    dev_mat = deviations(dev_altius)[, samples_altius, drop = FALSE],
+    dev_groups = short5_altius, bindsites = tf_bindsites_altius,
+    gcfreq = gcfreqs_altius, enh = NULL
+  )
+}))
+
+#####################################################################
 # The assembled supplementary figure
 #####################################################################
 
-if (length(p_e) == 0 || length(p_f) == 0) {
-  stop("Panel G or H produced no footprint, the supplementary figure is not written")
+if (length(p_e) == 0 || length(p_f) == 0 || length(p_j) == 0) {
+  stop("Panel G, H or J produced no footprint, the supplementary figure is not written")
 }
 
 p_e[[1]] <- p_e[[1]] + labs(tag = "G")
 p_f[[1]] <- p_f[[1]] + labs(tag = "H")
+p_j[[1]] <- p_j[[1]] + labs(tag = "J")
 
 # A and B carry the same key, so it is collected once and sits under the two
 # of them rather than beside the variability panel
@@ -831,8 +888,11 @@ row1 <- wrap_plots(row_ab, p_c + labs(tag = "C"),
 )
 row2 <- wrap_plots(c(list(p_d + labs(tag = "F")), p_e), nrow = 1, widths = c(1, 1.2, 1.2))
 row3 <- wrap_plots(p_f, nrow = 1)
+row4 <- wrap_plots(c(list(p_i + labs(tag = "I")), p_j), nrow = 1, widths = c(1, 1.2, 1.2))
 
-supplementary <- wrap_plots(row1, row2, row3, ncol = 1, heights = c(1, 1.5, 1.15)) &
+supplementary <- wrap_plots(row1, row2, row3, row4,
+  ncol = 1, heights = c(1, 1.5, 1.15, 1.5)
+) &
   tag_theme
 
 file <- file.path(fig.dir, "blueprint_supplementary.pdf")

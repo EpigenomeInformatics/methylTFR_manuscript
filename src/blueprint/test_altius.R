@@ -20,7 +20,7 @@ suppressPackageStartupMessages({
 })
 
 motifSet <- "altius"
-motifs <- c("ap1_1", "ap1_2")
+motifs <- c("ap1_1", "ap1_2","ccaat_cebp")
 plot.window <- 200L
 
 # The flanks are the baseline of the difference curve, so it starts from
