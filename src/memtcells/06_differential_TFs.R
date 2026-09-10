@@ -249,59 +249,9 @@ clean_gex_names <- function(x) {
   x
 }
 
-# Find the LOLA comparison for a contrast by name. RnBeads names them
-# "<group1> vs. <group2> (based on <column>)", so the pair of cell types and
-# the cellType column identify it without relying on the element order. The
-# group order also tells us which side "hyper" refers to.
-resolve_lola_comparison <- function(res_lola, test, ref, override = NA) {
-  nms <- names(res_lola$region)
-  if (is.null(nms)) stop("res_lola$region has no names")
-
-  idx <- NA
-  if (!is.na(override)) {
-    idx <- if (is.character(override)) match(override, nms) else as.integer(override)
-    if (is.na(idx) || idx < 1 || idx > length(nms)) {
-      stop("Override '", override, "' does not match res_lola$region")
-    }
-  } else {
-    hit <- grepl(paste0("\\b", test, "\\b"), nms) &
-      grepl(paste0("\\b", ref, "\\b"), nms) &
-      grepl("cellType", nms)
-    if (sum(hit) == 0) {
-      stop(
-        "No comparison matches ", test, " and ", ref, ". Available: ",
-        paste(nms, collapse = " | ")
-      )
-    }
-    if (sum(hit) > 1) {
-      stop(
-        "Several comparisons match ", test, " and ", ref, ": ",
-        paste(nms[hit], collapse = " | "), ". Set lola.comparison."
-      )
-    }
-    idx <- which(hit)
-  }
-
-  # "TEM vs. TN (based on cellType)" -> group1 TEM, group2 TN
-  parts <- strsplit(sub(" \\(based on.*", "", nms[idx]), "\\s*vs\\.\\s*")[[1]]
-  list(
-    index = idx, name = nms[idx],
-    grp1 = trimws(parts[1]), grp2 = trimws(parts[2])
-  )
-}
-
-# First of the preferred region names that this comparison actually carries
-resolve_lola_region <- function(res_lola, index, preferred) {
-  available <- names(res_lola$region[[index]])
-  hit <- intersect(preferred, available)
-  if (length(hit) == 0) {
-    stop(
-      "None of ", paste(preferred, collapse = ", "), " found. Available: ",
-      paste(available, collapse = ", ")
-    )
-  }
-  hit[1]
-}
+# resolve_lola_comparison(), resolve_lola_region() and
+# assert_distinct_comparisons() come from lola_utils.R, so 06 and 07 resolve
+# contrasts the same way.
 
 # Paired differential test blocking on donor. differential_deviation_test
 # is unpaired, which for this design leaves the donor effect in the residual
@@ -730,6 +680,7 @@ if (!file.exists(lola.file)) {
       " (hyper means hypermethylated in ", hit$grp1, ")")
     lola_hits[[nm]] <- hit
   }
+  assert_distinct_comparisons(lola_hits)
 
   # Volcano per contrast, from lola_utils.R
   for (nm in names(lola_hits)) {

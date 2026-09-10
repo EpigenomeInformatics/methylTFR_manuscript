@@ -161,15 +161,10 @@ motif_mean_deviations <- function(motif, dev_list, groups) {
     }
     idx <- which(rownames(mat) == motif)
     if (length(idx) == 0) {
-      idx <- grep(motif, rownames(mat), fixed = TRUE)
-    }
-    if (length(idx) == 0) {
+      message(motif, " is not a row of the deviations, no score for ", g)
       return(NA_real_)
     }
-    if (length(idx) > 1) {
-      message(motif, ": ", length(idx), " matching rows in ", g, ", using the first")
-      idx <- idx[1]
-    }
+    idx <- idx[1]
     vals <- mat[idx, ]
     if (all(is.na(vals))) NA_real_ else mean(vals, na.rm = TRUE)
   }, numeric(1))

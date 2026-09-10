@@ -256,3 +256,87 @@ plotVolcano <- function(df, top_motifs, oddsRatioCol, signifCol,
       )
     )
 }
+
+#####################################################################
+# Resolving a contrast to an index
+#
+# RnBeads labels comparisons "<group1> vs. <group2> (based on <column>)" but
+# returns them in a vector whose names are cmp1, cmp2 and so on, so the
+# description is the value and not the name. Matching the wrong one of the
+# two silently resolves every contrast to the same element, which is how two
+# contrasts end up sharing a figure.
+#####################################################################
+
+# Index of the single label carrying both group names as whole words.
+# Errors rather than guessing, and never returns more than one.
+resolve_comparison <- function(labels, test, ref, override = NA, what = "comparison") {
+  if (length(labels) == 0) stop("No ", what, " labels to match against")
+  if (!is.na(override)) {
+    idx <- if (is.character(override)) match(override, labels) else as.integer(override)
+    if (is.na(idx) || idx < 1 || idx > length(labels)) {
+      stop("Override '", override, "' does not match any ", what)
+    }
+  } else {
+    hit <- grepl(paste0("\\b", test, "\\b"), labels) &
+      grepl(paste0("\\b", ref, "\\b"), labels)
+    if (sum(hit) == 0) {
+      stop(
+        "No ", what, " matches ", test, " and ", ref, ". Available: ",
+        paste(labels, collapse = " | ")
+      )
+    }
+    if (sum(hit) > 1) {
+      stop(
+        "Several ", what, "s match ", test, " and ", ref, ": ",
+        paste(labels[hit], collapse = " | "), ". Set an override."
+      )
+    }
+    idx <- which(hit)
+  }
+  parts <- strsplit(sub(" \\(based on.*", "", labels[idx]), "\\s*vs\\.\\s*")[[1]]
+  list(
+    index = idx, name = labels[idx],
+    grp1 = trimws(parts[1]), grp2 = trimws(parts[2])
+  )
+}
+
+# The descriptive labels of an RnBeads comparison vector, which live in the
+# values when the names are the generic cmp identifiers
+comparison_labels <- function(cmps) {
+  nms <- names(cmps)
+  if (is.null(nms) || all(grepl("^cmp[0-9]+$", nms))) as.character(cmps) else nms
+}
+
+# The same for a LOLA result, whose region list is named by comparison
+resolve_lola_comparison <- function(res_lola, test, ref, override = NA) {
+  labels <- names(res_lola$region)
+  if (is.null(labels)) stop("res_lola$region has no names")
+  resolve_comparison(labels, test, ref, override, what = "LOLA comparison")
+}
+
+# Two contrasts resolving to one index means the figures would be identical.
+# Called once per script, after every contrast has been resolved.
+assert_distinct_comparisons <- function(hits) {
+  idx <- vapply(hits, function(h) h$index, numeric(1))
+  if (anyDuplicated(idx)) {
+    stop(
+      "Contrasts resolved to the same comparison: ",
+      paste(names(hits), idx, sep = " -> ", collapse = ", "),
+      ". Their figures would be identical."
+    )
+  }
+  invisible(TRUE)
+}
+
+# First of the preferred region names that this comparison actually carries
+resolve_lola_region <- function(res_lola, index, preferred) {
+  available <- names(res_lola$region[[index]])
+  hit <- intersect(preferred, available)
+  if (length(hit) == 0) {
+    stop(
+      "None of ", paste(preferred, collapse = ", "), " found. Available: ",
+      paste(available, collapse = ", ")
+    )
+  }
+  hit[1]
+}

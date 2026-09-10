@@ -4,9 +4,11 @@
 # 07_memT_supplementary.R
 # created on 06-09-2026 by Irem B Gunduz
 # The memory T cell supplementary figure
-#   A  MA plots of the RnBeads differential methylation, one per contrast
-#   B  LOLA motif enrichment volcanoes, one per contrast
-#   C  Observed minus expected footprints of four motifs
+#   A  LOLA motif enrichment volcanoes, one per contrast
+#   B  Observed minus expected footprints of four motifs
+#
+# No MA plots: they need the RnBDiffMeth object relinked, which takes minutes
+# and a great deal of memory for a panel that says little.
 #####################################################################
 
 suppressPackageStartupMessages({
@@ -46,7 +48,6 @@ footprint.motifs <- c("JUN", "FOSL2", "BATF", "SPIB")
 flank.norm <- 50
 
 # Panel A. The rank cut is chosen per comparison, as in 06
-diffmeth.region <- "tiling1kb"
 diffmeth.rank.cut <- 1000
 diffmeth.auto.rank.cut <- TRUE
 
@@ -154,8 +155,8 @@ motif_mean_deviations <- function(motif, dev_list, groups) {
       return(NA_real_)
     }
     idx <- which(rownames(mat) == motif)
-    if (length(idx) == 0) idx <- grep(motif, rownames(mat), fixed = TRUE)
     if (length(idx) == 0) {
+      log_warn(motif, " is not a row of the deviations, no score for ", g)
       return(NA_real_)
     }
     vals <- mat[idx[1], ]
@@ -171,51 +172,7 @@ make_label <- function(group, dev_val) {
 }
 
 #####################################################################
-# A, MA plots of the differential methylation
-#####################################################################
-
-p_ma <- list()
-if (!dir.exists(diffmeth.dir)) {
-  log_warn("Differential methylation results not found: ", diffmeth.dir)
-} else {
-  diffMeth <- load.rnb.diffmeth(diffmeth.dir)
-  cmps <- get.comparisons(diffMeth)
-  log_info(length(cmps), " comparisons: ", paste(names(cmps), collapse = " | "))
-
-  for (nm in names(comparisons)) {
-    test <- comparisons[[nm]]$test
-    ref <- comparisons[[nm]]$ref
-    idx <- grep(paste0(test, ".*", ref), names(cmps))
-    if (length(idx) == 0) {
-      log_warn(nm, ": no RnBeads comparison matches ", test, " vs ", ref)
-      next
-    }
-
-    # The differential points take the colour of the subtype the contrast
-    # is about, so the two panels are told apart by colour alone
-    pl <- tryCatch(
-      maPlot(diffMeth, diffmeth.region,
-        comparison = idx[1],
-        rank.cut = diffmeth.rank.cut, auto.rank.cut = diffmeth.auto.rank.cut,
-        point.colors = c(
-          "Differential" = unname(cell_type_colors[[test]]),
-          "Not differential" = "grey78"
-        )
-      ),
-      error = function(e) {
-        log_warn(nm, " MA plot: ", conditionMessage(e))
-        NULL
-      }
-    )
-    if (is.null(pl)) next
-    p_ma[[nm]] <- pl + theme_classic(base_size = base.size) +
-      theme(legend.position = "bottom", legend.key.size = unit(3.5, "mm"))
-    log_info("MA plot for ", nm, " from comparison ", names(cmps)[idx[1]])
-  }
-}
-
-#####################################################################
-# B, LOLA enrichment volcanoes
+# A, LOLA enrichment volcanoes
 #####################################################################
 
 p_lola <- list()
@@ -223,6 +180,7 @@ if (!file.exists(lola.file)) {
   log_warn("LOLA results not found: ", lola.file)
 } else {
   res_lola <- readRDS(lola.file)
+  lola_idx <- integer(0)
   for (nm in names(comparisons)) {
     hit <- tryCatch(
       {
@@ -239,6 +197,7 @@ if (!file.exists(lola.file)) {
       }
     )
     if (is.null(hit)) next
+    lola_idx[nm] <- hit$index
 
     pl <- tryCatch(
       lolaVolcanoPlot(
@@ -260,10 +219,17 @@ if (!file.exists(lola.file)) {
     p_lola[[nm]] <- pl
     log_info("LOLA volcano for ", nm, ", region ", hit$region)
   }
+  if (anyDuplicated(lola_idx)) {
+    stop(
+      "Contrasts resolved to the same LOLA comparison: ",
+      paste(names(lola_idx), lola_idx, sep = " -> ", collapse = ", "),
+      ". Their panels would be identical."
+    )
+  }
 }
 
 #####################################################################
-# C, observed minus expected footprints
+# B, observed minus expected footprints
 #####################################################################
 
 if (!file.exists(cache.file)) {
@@ -365,19 +331,17 @@ p_foot <- Filter(Negate(is.null), lapply(footprint.motifs, footprint_panel))
 # The assembled supplementary figure
 #####################################################################
 
-if (length(p_ma) == 0 || length(p_lola) == 0 || length(p_foot) == 0) {
-  stop("One of the three panels is empty, the supplementary figure is not written")
+if (length(p_lola) == 0 || length(p_foot) == 0) {
+  stop("One of the two panels is empty, the supplementary figure is not written")
 }
 
-p_ma[[1]] <- p_ma[[1]] + labs(tag = "A")
-p_lola[[1]] <- p_lola[[1]] + labs(tag = "B")
-p_foot[[1]] <- p_foot[[1]] + labs(tag = "C")
+p_lola[[1]] <- p_lola[[1]] + labs(tag = "A")
+p_foot[[1]] <- p_foot[[1]] + labs(tag = "B")
 
 supplementary <- wrap_plots(
-  wrap_plots(p_ma, nrow = 1),
   wrap_plots(p_lola, ncol = 1),
   wrap_plots(p_foot, nrow = 2),
-  ncol = 1, heights = c(1, 1.5, 1.8)
+  ncol = 1, heights = c(1.5, 1.8)
 ) & tag_theme
 
 file <- file.path(plot.dir, "memT_supplementary.pdf")
