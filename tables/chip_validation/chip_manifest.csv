@@ -1,0 +1,33 @@
+set_id,factor,bp_celltype,chip_label,match,source,urls
+SPI1_monocyte_ReMap,SPI1,mono,primary CD14+ monocyte,primary,ReMap2022,https://remap.univ-amu.fr/storage/remap2022/hg38/MACS2/DATASET/GSE31621.SPI1.monocyte.bed.gz;https://remap.univ-amu.fr/storage/remap2022/hg38/MACS2/DATASET/GSE98367.SPI1.monocyte.bed.gz
+CEBPB_monocyte_ReMap,CEBPB,mono,primary CD14+ monocyte,primary,ReMap2022,https://remap.univ-amu.fr/storage/remap2022/hg38/MACS2/DATASET/GSE31621.CEBPB.monocyte.bed.gz;https://remap.univ-amu.fr/storage/remap2022/hg38/MACS2/DATASET/GSE98367.CEBPB.monocyte.bed.gz
+SPI1_macrophage_ReMap,SPI1,Mf,monocyte-derived macrophage,primary,ReMap2022,https://remap.univ-amu.fr/storage/remap2022/hg38/MACS2/DATASET/GSE31621.SPI1.monocyte_MACROPHAGE.bed.gz;https://remap.univ-amu.fr/storage/remap2022/hg38/MACS2/DATASET/GSE47188.SPI1.macrophage_IFNG.bed.gz;https://remap.univ-amu.fr/storage/remap2022/hg38/MACS2/DATASET/GSE47188.SPI1.macrophage_IL4.bed.gz
+SPI1_DC_ReMap,SPI1,DC,dendritic cell,primary,ReMap2022,https://remap.univ-amu.fr/storage/remap2022/hg38/MACS2/DATASET/GSE123347.SPI1.DC.bed.gz;https://remap.univ-amu.fr/storage/remap2022/hg38/MACS2/DATASET/GSE58864.SPI1.dendrite.bed.gz
+SPI1_neutrophil_ReMap,SPI1,gran,primary neutrophil,primary (verify),ReMap2022,https://remap.univ-amu.fr/storage/remap2022/hg38/MACS2/DATASET/GSE128834.SPI1.primary-neutrophil_donorE.bed.gz;https://remap.univ-amu.fr/storage/remap2022/hg38/MACS2/DATASET/GSE128834.SPI1.primary-neutrophil_donorF.bed.gz
+SPI1_primaryB_ReMap,SPI1,Bcell,primary B cell,primary (verify),ReMap2022,https://remap.univ-amu.fr/storage/remap2022/hg38/MACS2/DATASET/GSE128834.SPI1.primary-B-cell_donorA.bed.gz;https://remap.univ-amu.fr/storage/remap2022/hg38/MACS2/DATASET/GSE128834.SPI1.primary-B-cell_donorC.bed.gz
+ETS1_CD4T_UniBind,ETS1,Tcell,primary CD4+ T cell,primary,UniBind,https://unibind.uio.no/static/data/20220914/macs/DAMO/EXP032565.CD4_CD25_CD45RA_T-cells.ETS1/EXP032565.CD4_CD25_CD45RA_T-cells.ETS1.MA0098.3.damo.bed;https://unibind.uio.no/static/data/20220914/macs/DAMO/EXP032566.CD4_CD25_CD45RA_T-cells.ETS1/EXP032566.CD4_CD25_CD45RA_T-cells.ETS1.MA0098.3.damo.bed;https://unibind.uio.no/static/data/20220914/macs/DAMO/EXP032567.CD4_CD25_CD45RA_T-cells.ETS1/EXP032567.CD4_CD25_CD45RA_T-cells.ETS1.MA0098.3.damo.bed;https://unibind.uio.no/static/data/20220914/macs/DAMO/EXP032568.CD4_CD25-_T-cells.ETS1/EXP032568.CD4_CD25-_T-cells.ETS1.MA0098.3.damo.bed;https://unibind.uio.no/static/data/20220914/macs/DAMO/EXP032569.CD4_CD25-_T-cells.ETS1/EXP032569.CD4_CD25-_T-cells.ETS1.MA0098.3.damo.bed
+RELA_CD4Th1_UniBind,RELA,Tcell,primary CD4+ Th1,primary,UniBind,https://unibind.uio.no/static/data/20220914/macs/DAMO/GSE62482.CD4_TH1_DMSO.RELA/GSE62482.CD4_TH1_DMSO.RELA.MA0107.1.damo.bed
+CEBPB_MDM_UniBind,CEBPB,Mf,monocyte-derived macrophage,primary,UniBind,https://unibind.uio.no/static/data/20220914/macs/DAMO/EXP038588.monocyte-derived_macrophages.CEBPB/EXP038588.monocyte-derived_macrophages.CEBPB.MA0466.2.damo.bed;https://unibind.uio.no/static/data/20220914/macs/DAMO/EXP038589.monocyte-derived_macrophages.CEBPB/EXP038589.monocyte-derived_macrophages.CEBPB.MA0466.2.damo.bed;https://unibind.uio.no/static/data/20220914/macs/DAMO/EXP040652.monocyte-derived_macrophages.CEBPB/EXP040652.monocyte-derived_macrophages.CEBPB.MA0466.2.damo.bed
+RELA_MDM_UniBind,RELA,Mf,monocyte-derived macrophage,primary,UniBind,https://unibind.uio.no/static/data/20220914/macs/DAMO/EXP036831.monocyte-derived_macrophages.RELA/EXP036831.monocyte-derived_macrophages.RELA.MA0107.1.damo.bed;https://unibind.uio.no/static/data/20220914/macs/DAMO/EXP036832.monocyte-derived_macrophages.RELA/EXP036832.monocyte-derived_macrophages.RELA.MA0107.1.damo.bed
+SPI1_GM12878_ENCODE,SPI1,Bcell,GM12878,proxy,ENCODE,https://www.encodeproject.org/files/ENCFF492ZRZ/@@download/ENCFF492ZRZ.bed.gz
+EBF1_GM12878_ENCODE,EBF1,Bcell,GM12878,proxy,ENCODE,https://www.encodeproject.org/files/ENCFF895MHN/@@download/ENCFF895MHN.bed.gz
+POU2F2_GM12878_ENCODE,POU2F2,Bcell,GM12878,proxy,ENCODE,https://www.encodeproject.org/files/ENCFF934JFA/@@download/ENCFF934JFA.bed.gz
+ELF1_GM12878_ENCODE,ELF1,Bcell,GM12878,proxy,ENCODE,https://www.encodeproject.org/files/ENCFF146SYU/@@download/ENCFF146SYU.bed.gz
+ETS1_GM12878_ENCODE,ETS1,Bcell,GM12878,proxy,ENCODE,https://www.encodeproject.org/files/ENCFF568AZT/@@download/ENCFF568AZT.bed.gz
+GABPA_GM12878_ENCODE,GABPA,Bcell,GM12878,proxy,ENCODE,https://www.encodeproject.org/files/ENCFF093KLR/@@download/ENCFF093KLR.bed.gz
+BATF_GM12878_ENCODE,BATF,Bcell,GM12878,proxy,ENCODE,https://www.encodeproject.org/files/ENCFF728KFD/@@download/ENCFF728KFD.bed.gz
+CEBPB_GM12878_ENCODE,CEBPB,Bcell,GM12878,proxy,ENCODE,https://www.encodeproject.org/files/ENCFF955YFB/@@download/ENCFF955YFB.bed.gz
+JUNB_GM12878_ENCODE,JUNB,Bcell,GM12878,proxy,ENCODE,https://www.encodeproject.org/files/ENCFF912OPT/@@download/ENCFF912OPT.bed.gz
+JUND_GM12878_ENCODE,JUND,Bcell,GM12878,proxy,ENCODE,https://www.encodeproject.org/files/ENCFF134BQO/@@download/ENCFF134BQO.bed.gz
+FOS_GM12878_ENCODE,FOS,Bcell,GM12878,proxy,ENCODE,https://www.encodeproject.org/files/ENCFF571DGT/@@download/ENCFF571DGT.bed.gz
+RELA_GM12878_ENCODE,RELA,Bcell,GM12878,proxy,ENCODE,https://www.encodeproject.org/files/ENCFF141SMI/@@download/ENCFF141SMI.bed.gz
+SPI1_K562_ENCODE,SPI1,eryt,K562,proxy,ENCODE,https://www.encodeproject.org/files/ENCFF888CKG/@@download/ENCFF888CKG.bed.gz
+CEBPB_K562_ENCODE,CEBPB,eryt,K562,proxy,ENCODE,https://www.encodeproject.org/files/ENCFF882ARK/@@download/ENCFF882ARK.bed.gz
+ELF1_K562_ENCODE,ELF1,eryt,K562,proxy,ENCODE,https://www.encodeproject.org/files/ENCFF688TNZ/@@download/ENCFF688TNZ.bed.gz
+ETS1_K562_ENCODE,ETS1,eryt,K562,proxy,ENCODE,https://www.encodeproject.org/files/ENCFF886BDQ/@@download/ENCFF886BDQ.bed.gz
+GABPA_K562_ENCODE,GABPA,eryt,K562,proxy,ENCODE,https://www.encodeproject.org/files/ENCFF489EME/@@download/ENCFF489EME.bed.gz
+FOSL1_K562_ENCODE,FOSL1,eryt,K562,proxy,ENCODE,https://www.encodeproject.org/files/ENCFF004HXL/@@download/ENCFF004HXL.bed.gz
+FOS_K562_ENCODE,FOS,eryt,K562,proxy,ENCODE,https://www.encodeproject.org/files/ENCFF258PLH/@@download/ENCFF258PLH.bed.gz
+JUN_K562_ENCODE,JUN,eryt,K562,proxy,ENCODE,https://www.encodeproject.org/files/ENCFF190CGV/@@download/ENCFF190CGV.bed.gz
+JUNB_K562_ENCODE,JUNB,eryt,K562,proxy,ENCODE,https://www.encodeproject.org/files/ENCFF328OCA/@@download/ENCFF328OCA.bed.gz
+JUND_K562_ENCODE,JUND,eryt,K562,proxy,ENCODE,https://www.encodeproject.org/files/ENCFF306SZL/@@download/ENCFF306SZL.bed.gz

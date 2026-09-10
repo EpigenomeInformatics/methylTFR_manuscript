@@ -9,15 +9,24 @@
 #      split by whether the factor is expressed at all
 #   C  Cell type variance carried by TF mRNA and by VIPER activity
 #   D  Agreement of each of the two with the methylTFR deviations
-#   E  Per motif correlation of the H3K27ac signal with each modality
-#   F  Aggregate H3K27ac profile around the motif centres, per cell type,
-#      against random distal positions
-#   G  Three motifs sample by sample, against each modality
+#   E  H3K27ac at the distal motif sites, myeloid against lymphoid, with the
+#      random distal positions drawn as the empirical baseline
+#   F  Which ChIP-seq target x cell type combinations have usable data at all
+#   G  TF ChIP site level split, summarised: every comparison scored against
+#      its own methylome and against a methylome from another lineage,
+#      the cell line kept apart from the primary cells
+#   H  The same two numbers against each other, against the diagonal
+#
+# The 28 comparisons one by one, and the motif level panel, are drawn in
+# 14_bp_tf_chip_figures.R as a second supplementary.
 #
 # The expected deviation scores themselves live in the Blueprint
 # supplementary, they are a property of the algorithm rather than of the
-# integration. Panels E to G need 11_bp_chip_validation.R to have run and
-# are dropped with a warning otherwise
+# integration. Panels E to G need 13_bp_tf_chip_validation.R to have run
+# and are dropped with a warning otherwise.
+#
+# The H3K27ac panels these replace showed that the motif sites sit in active
+# chromatin, which is a weaker claim than occupancy.
 #####################################################################
 
 suppressPackageStartupMessages({
@@ -99,7 +108,6 @@ mofa.dir <- file.path(analysis.dir, "mofa_230826")
 counts.file <- file.path(mofa.dir, "bp_rawRNAcounts.RDS")
 viper.file <- file.path(mofa.dir, "bp_viper_activity.RDS")
 map.file <- file.path(mofa.dir, "bp_rna_wgbs_map.tsv")
-chip.file <- file.path(mofa.dir, "bp_chip_signal.RDS")
 
 github.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/"
 fig.dir <- file.path(github.dir, "figures", "blueprint")
@@ -464,348 +472,278 @@ write.csv(tf_tab, file.path(mixed.dir, "bp_viper_vs_expression_celltype_R2.csv")
 )
 
 #####################################################################
-# E to G) Histone ChIP, only if 11 has been run
+# E) H3K27ac at the same distal sites, only if 11 has been run
+#
+# What is kept of the histone panels. The claim is that the sites methylTFR
+# scores lie in lineage appropriate active chromatin, which is a premise of
+# the method rather than a validation of the score. The per motif
+# correlations of H3K27ac with the deviations were centred on zero and are
+# not shown: a histone mark reports chromatin state, not occupancy, which is
+# what F to H address.
+#
+# Only monocytes and T cells are drawn. The four cell type colours do not
+# separate granulocytes from macrophages reliably, and myeloid against
+# lymphoid is the contrast the panel is making.
 #####################################################################
 
-p_dist <- p_e <- p_g <- NULL
+p_h27 <- NULL
+prof.file <- file.path(mixed.dir, "bp_chip_profiles.csv")
 
-if (!file.exists(chip.file)) {
-  log_warn("No ChIP signal at ", chip.file, ", panels E to G are skipped. Run 11 first")
+if (!file.exists(prof.file)) {
+  log_warn("No ", prof.file, ", panel E is skipped. Run 11 first")
 } else {
-  chip <- readRDS(chip.file)
-  mark.primary <- chip$mark.primary
-  chip_cor <- as.data.table(chip$correlations)
-  chip_cor[, set := factor(set, levels = names(set_colors))]
-  primary <- chip_cor[mark == mark.primary & is.finite(r_mtfr) & is.finite(r_viper)]
-  if (nrow(primary) < 5) stop("Too few motifs carry a ChIP correlation")
+  h27.keep <- c(mono = "Monocytes", Tcell = "T-cells")
+  h27.col <- c(Monocytes = "#C2703D", `T-cells` = "#4FC3D9")
+  h27.motifs <- c("CEBPB", "FOSL2::JUNB")
 
-  chip_map <- as.data.table(chip$map)
-  # An RDS written before the profile pass carries neither, so both panels
-  # that depend on them check first rather than failing
-  chip_examples <- if (is.null(chip$examples)) data.table() else as.data.table(chip$examples)
+  prof <- fread(prof.file)
+  prof <- prof[cellTypeGroup %chin% names(h27.keep)]
+  prof[, celltype := factor(h27.keep[cellTypeGroup], levels = h27.keep)]
+  prof[, at := fifelse(group == "Random distal positions",
+                       "random distal positions", "motif sites")]
+  prof[, motif := fifelse(at == "motif sites", group, NA_character_)]
 
-  #############################################################
-  # E) The signal itself
-  #
-  # Mean profile around the motif centres, one line per cell type, each
-  # sample divided by its own mean over random distal regions so the
-  # y axis is enrichment rather than the per experiment fc scale. The
-  # random regions are drawn as their own facet, which is the control a
-  # reviewer looks for: the motifs must stand above a flat line
-  #############################################################
-
-  profiles <- as.data.table(chip$profiles)
-  if (is.null(profiles) || nrow(profiles) == 0) {
-    log_warn("No profiles in ", chip.file, ", panel E is skipped")
-  } else {
-    profiles[, celltype := factor(unname(cell_type_labels[cellTypeGroup]),
-      levels = cell_type_levels
-    )]
-    prof_summary <- profiles[, .(
-      mean = mean(value, na.rm = TRUE),
-      se = sd(value, na.rm = TRUE) / sqrt(sum(is.finite(value))),
-      n = sum(is.finite(value))
-    ), by = .(group, celltype, pos)]
-    prof_summary[, group := factor(group, levels = unique(profiles$group))]
-    site_n <- profiles[, .(sites = max(n, na.rm = TRUE)), by = group]
-    prof_summary[, panel := factor(
-      sprintf("%s\n%s sites", group, format(site_n$sites[match(group, site_n$group)],
-        big.mark = ","
-      )),
-      levels = sprintf("%s\n%s sites", levels(group),
-        format(site_n$sites[match(levels(group), site_n$group)], big.mark = ",")
-      )
-    )]
-
-    log_info(
-      "Profile peak enrichment per group: ",
-      paste(prof_summary[, .(m = round(max(mean, na.rm = TRUE), 2)), by = group]$group,
-        prof_summary[, .(m = round(max(mean, na.rm = TRUE), 2)), by = group]$m,
-        sep = " = ", collapse = ", "
-      )
-    )
-
-    p_e <- ggplot(prof_summary, aes(x = pos, y = mean, colour = celltype, fill = celltype)) +
-      geom_hline(yintercept = 1, linetype = "dotted", colour = "grey55") +
-      geom_vline(xintercept = 0, linetype = "dotted", colour = "grey55") +
-      geom_ribbon(aes(ymin = mean - se, ymax = mean + se),
-        colour = NA, alpha = 0.18, show.legend = FALSE
-      ) +
-      geom_line(linewidth = 0.6) +
-      facet_wrap(~panel, nrow = 1) +
-      scale_colour_manual(values = cell_type_colors, name = NULL, drop = TRUE) +
-      scale_fill_manual(values = cell_type_colors, guide = "none", drop = TRUE) +
-      scale_x_continuous(
-        breaks = c(-chip$profile.window, 0, chip$profile.window),
-        labels = c(
-          paste0("-", chip$profile.window / 1000, " kb"), "motif",
-          paste0("+", chip$profile.window / 1000, " kb")
-        )
-      ) +
-      labs(
-        x = "Distance from the motif centre",
-        y = sprintf(
-          "%s enrichment over random distal\npositions, mean +/- s.e. of samples",
-          mark.primary
-        )
-      ) +
-      base_theme +
-      theme(legend.position = "bottom")
-  }
-
-  #############################################################
-  # F) The direction each motif predicts for itself
-  #
-  # Whether the integration picked a motif is the wrong split: with four
-  # cell types anything that varies by lineage correlates with anything
-  # else that does, and the two groups land in the same places. What does
-  # separate them is the motif's own relationship between the modalities.
-  # Where methylTFR and VIPER run opposite the factor loses deviation
-  # score as it gains activity, so the active mark should fall on the
-  # methylTFR side and rise on the VIPER side. Where they run together no
-  # such expectation holds, and the fitted lines duly run opposite ways
-  #############################################################
-
-  # The axes are the measurements themselves rather than two correlations,
-  # one point per motif per cell type. Correlating across the motifs inside a
-  # cell type also rests on about two hundred points instead of the thirty
-  # five samples a per motif correlation has
-  chip_mat_f <- chip$signals[[mark.primary]]
-  f_samples <- colnames(chip_mat_f)
-  f_types <- factor(
-    unname(cell_type_labels[chip_map$cellTypeGroup[match(f_samples, chip_map$bedFile)]]),
-    levels = cell_type_levels
-  )
-  f_rna <- chip_map$rna_id[match(f_samples, chip_map$bedFile)]
-  f_motifs <- intersect(rownames(chip_mat_f), rownames(mtfr_z))
-  f_tf <- setNames(chip_cor$viper_tf[match(f_motifs, chip_cor$motif)], f_motifs)
-
-  cell_tab <- rbindlist(lapply(levels(droplevels(f_types)), function(g) {
-    idx <- which(f_types == g)
-    if (length(idx) == 0) {
-      return(NULL)
-    }
-    data.table(
-      motif = f_motifs,
-      celltype = g,
-      chip = rowMeans(chip_mat_f[f_motifs, idx, drop = FALSE], na.rm = TRUE),
-      mtfr = rowMeans(mtfr_z[f_motifs, f_samples[idx], drop = FALSE], na.rm = TRUE),
-      viper = vapply(f_motifs, function(m) {
-        tf <- f_tf[[m]]
-        if (is.na(tf) || !tf %in% rownames(viper_act)) {
-          return(NA_real_)
-        }
-        mean(as.numeric(viper_act[tf, f_rna[idx]]), na.rm = TRUE)
-      }, numeric(1), USE.NAMES = FALSE)
-    )
+  # the random curve is the shared baseline, so it is repeated in each facet
+  rand <- prof[at == "random distal positions"]
+  prof <- rbindlist(lapply(h27.motifs, function(m) {
+    rbind(prof[motif == m], copy(rand)[, motif := m])
   }))
-  cell_tab[, celltype := factor(celltype, levels = cell_type_levels)]
-  cell_tab <- merge(cell_tab, chip_cor[mark == mark.primary, .(motif, set)],
-    by = "motif", all.x = TRUE
-  )
+  prof[, motif := factor(motif, levels = h27.motifs)]
 
-  # Each motif is centred on its own average over the cell types. Without
-  # this the comparison is dominated by whether a motif sits in open
-  # chromatin at all, which is the same in every cell type and has nothing
-  # to do with the question. Centred, the axes read as how far this cell
-  # type departs from that motif's own baseline
-  cell_tab[, `:=`(
-    chip_c = chip - mean(chip, na.rm = TRUE),
-    mtfr_c = mtfr - mean(mtfr, na.rm = TRUE),
-    viper_c = viper - mean(viper, na.rm = TRUE)
-  ), by = motif]
-  write.csv(cell_tab, file.path(mixed.dir, "bp_chip_by_celltype.csv"), row.names = FALSE)
+  prof_s <- prof[, .(
+    mean = mean(value, na.rm = TRUE),
+    se = sd(value, na.rm = TRUE) / sqrt(sum(is.finite(value)))
+  ), by = .(motif, celltype, at, pos)]
 
-  cor_by_type <- rbindlist(lapply(c("mtfr_c", "viper_c"), function(v) {
-    cell_tab[, .(
-      modality = if (v == "mtfr_c") "methylTFR deviation" else "VIPER activity",
-      r = suppressWarnings(cor(chip_c, get(v), use = "complete.obs"))
-    ), by = celltype]
-  }))
-  cor_by_type[, modality := factor(modality,
-    levels = c("methylTFR deviation", "VIPER activity")
-  )]
-  pooled <- c(
-    mtfr = suppressWarnings(cor(cell_tab$chip_c, cell_tab$mtfr_c, use = "complete.obs")),
-    viper = suppressWarnings(cor(cell_tab$chip_c, cell_tab$viper_c, use = "complete.obs"))
-  )
   log_info(
-    "Motif centred, across motifs within a cell type: ",
-    paste(cor_by_type$modality, cor_by_type$celltype,
-      round(cor_by_type$r, 3),
-      sep = " / ", collapse = "; "
-    )
-  )
-  log_info(
-    "Motif centred, pooled over every motif and cell type: methylTFR ",
-    round(pooled[["mtfr"]], 3), ", VIPER ", round(pooled[["viper"]], 3)
-  )
-  # Kept in the log rather than the figure: the per motif correlations across
-  # samples, which is the weaker of the two ways to ask this
-  coupling <- suppressWarnings(cor.test(primary$r_mtfr, primary$r_viper))
-  log_info(
-    "Per motif across samples, coupling of the two ChIP correlations: r = ",
-    round(unname(coupling$estimate), 3), ", p = ", signif(coupling$p.value, 3)
-  )
-  log_info(
-    "Within cell type, median r: methylTFR ",
-    round(median(primary$r_mtfr_within, na.rm = TRUE), 3), ", VIPER ",
-    round(median(primary$r_viper_within, na.rm = TRUE), 3)
+    "H3K27ac at the motif centre: ",
+    paste(prof_s[abs(pos) <= 250,
+                 .(m = round(mean(mean), 3)), by = .(motif, celltype, at)][
+                   , paste0(motif, " ", celltype, " ", at, " ", m)],
+          collapse = "; ")
   )
 
-  # Only motifs the integration heatmap shows are named, and once per motif
-  # at its average position rather than once per cell type
-  # The across motif analysis above showed no consistent relationship in any
-  # cell type, so it stays in the log and the table rather than the figure.
-  # What the figure shows instead is the per motif correlation across
-  # samples, one distribution per modality, tested against zero
-  dist_long <- melt(
-    primary[, .(motif,
-      `methylTFR deviation` = r_mtfr, `VIPER activity` = r_viper
-    )],
-    id.vars = "motif", variable.name = "modality", value.name = "r"
-  )
-  dist_long <- dist_long[is.finite(r)]
-
-  dist_p <- p.adjust(vapply(levels(dist_long$modality), function(m) {
-    x <- dist_long[modality == m]$r
-    if (length(x) < 3) NA_real_ else suppressWarnings(wilcox.test(x, mu = 0)$p.value)
-  }, numeric(1)), method = "BH")
-
-  dist_lab <- dist_long[, .(median = median(r, na.rm = TRUE), n = .N), by = modality]
-  dist_lab[, label := sprintf(
-    "median %.2f\n%s", median,
-    ifelse(is.na(dist_p[as.character(modality)]), "p.adj n.a.",
-      paste0("p.adj = ", format.pval(dist_p[as.character(modality)],
-        digits = 2, eps = 1e-16
-      ))
-    )
-  )]
-  log_info(
-    "Per motif correlation with the ", mark.primary, " signal: ",
-    paste(dist_lab$modality, sprintf(
-      "median %.3f, n = %d, p.adj = %s", dist_lab$median, dist_lab$n,
-      signif(dist_p[as.character(dist_lab$modality)], 3)
-    ), sep = ", ", collapse = "; ")
-  )
-
-  p_dist <- ggplot(dist_long, aes(x = modality, y = r, fill = modality)) +
-    geom_hline(yintercept = 0, linetype = "dotted", colour = "grey50") +
-    stat_boxplot(geom = "errorbar", width = 0.3, linewidth = 0.5) +
-    geom_boxplot(colour = "black", outlier.shape = NA, width = 0.55) +
-    geom_jitter(width = 0.15, size = 0.6, alpha = 0.4, colour = "grey20") +
-    geom_text(
-      data = dist_lab, inherit.aes = FALSE,
-      aes(x = modality, y = max(dist_long$r, na.rm = TRUE) * 1.08, label = label),
-      vjust = 0, size = 2.6
-    ) +
-    scale_fill_manual(
-      values = c(
-        "methylTFR deviation" = "#ED4B4A", "VIPER activity" = "#6BC75A"
-      ),
-      guide = "none"
-    ) +
-    scale_y_continuous(expand = expansion(mult = c(0.05, 0.28))) +
+  p_h27 <- ggplot(prof_s, aes(x = pos, y = mean, colour = celltype,
+                              linetype = at, fill = celltype)) +
+    geom_hline(yintercept = 1, linewidth = 0.3, colour = "grey85",
+               linetype = "dotted") +
+    geom_vline(xintercept = 0, linewidth = 0.3, colour = "grey85",
+               linetype = "dotted") +
+    geom_ribbon(data = prof_s[at == "motif sites"],
+                aes(ymin = mean - se, ymax = mean + se),
+                alpha = 0.15, colour = NA) +
+    geom_line(linewidth = 0.5) +
+    facet_wrap(~motif, nrow = 1) +
+    scale_colour_manual(values = h27.col) +
+    scale_fill_manual(values = h27.col, guide = "none") +
+    scale_linetype_manual(values = c(`motif sites` = "solid",
+                                     `random distal positions` = "22")) +
+    scale_x_continuous(breaks = c(-2000, 0, 2000),
+                       labels = c("-2 kb", "motif", "+2 kb")) +
     labs(
-      x = sprintf("n = %d motifs", uniqueN(dist_long$motif)),
-      y = sprintf(
-        "Pearson r with the %s signal,\nacross samples within a motif", mark.primary
-      )
+      x = "distance from the motif centre", y = "H3K27ac fold change",
+      colour = NULL, linetype = NULL,
+      title = "The mark follows the lineage, not the motif",
+      subtitle = "read the solid curves against the dashed ones, not against 1"
     ) +
-    base_theme
+    base_theme +
+    theme(legend.position = "bottom",
+          legend.box = "vertical",
+          legend.spacing.y = unit(0.02, "cm"),
+          plot.title = element_text(hjust = 0, face = "plain", size = base.size))
+}
 
-  # Three named motifs per facet, ranked by how far they sit from their own
-  # average, and each motif named only once per modality so the same AP-1
-  # dimers do not fill every panel
+#####################################################################
+# F to H) TF ChIP occupancy, only if 15 has been run
+#
+# Replaces the H3K27ac panels. A histone mark shows that the motif sites sit
+# in active chromatin; these show that the sites a factor actually occupies
+# are hypomethylated relative to sequence matched sites it does not, and that
+# the difference largely disappears when the same sites are scored against a
+# methylome from another lineage.
+#####################################################################
 
-  #############################################################
-  # G) The same motifs, sample by sample
-  #############################################################
+p_cov <- p_split <- p_spec <- NULL
 
-  picked <- if (nrow(chip_examples) == 0) {
-    chip_examples
-  } else {
-    chip_examples[motif %in% primary$motif]
-  }
-  if (nrow(picked) == 0) {
-    log_warn("No example motifs in ", chip.file, ", re-run 11. Panel G is skipped")
-  } else {
-    log_info("Panel G examples: ", paste(picked$motif, collapse = ", "))
-    chip_mat <- chip$signals[[mark.primary]]
-    chip_samples <- colnames(chip_mat)
-    chip_rna <- chip_map$rna_id[match(chip_samples, chip_map$bedFile)]
-    chip_types <- factor(
-      unname(cell_type_labels[chip_map$cellTypeGroup[match(chip_samples, chip_map$bedFile)]]),
-      levels = cell_type_levels
+chip.dir <- file.path(github.dir, "tables", "chip_validation")
+chip.A <- file.path(chip.dir, "A_site_level_split.csv")
+
+if (!file.exists(chip.A)) {
+  log_warn("No TF ChIP table at ", chip.A, ", panels F to H are skipped. Run 13 first")
+} else {
+  col.matched <- "#C2377C"
+  col.control <- "#2B4B9B"
+  ink.muted <- "grey40"
+  ink.mark <- "grey25"
+
+  chipA <- fread(chip.A)
+
+  ct.label <- c(
+    GM12878 = "GM12878\n(B cell line)", monocyte = "Monocytes",
+    Tcell = "T-cells", Bcell = "B-cells"
+  )
+  chipA[, ct := factor(ct.label[methylome], levels = ct.label)]
+  chipA[, primary := match != "proxy"]
+  chipA <- chipA[order(delta)]
+  # a motif can appear in more than one methylome, so the row key carries both
+  # and only the motif is printed
+  chipA[, row_key := factor(paste(motif, methylome, sep = "@"),
+                            levels = paste(motif, methylome, sep = "@"))]
+  strip_key <- function(x) sub("@.*$", "", x)
+
+  log_info(
+    "TF ChIP split: median ", round(median(chipA$delta, na.rm = TRUE), 3),
+    " against its own methylome, ",
+    round(median(chipA$delta_control, na.rm = TRUE), 3),
+    " against another lineage; ",
+    sum(chipA$specificity > 0, na.rm = TRUE), " of ",
+    sum(is.finite(chipA$specificity)), " stronger where the factor is bound"
+  )
+
+  # E) what data exists. The panel that justifies GM12878: it is the only
+  # cell type carrying more than two factors, and eight of the twenty-two
+  # have no usable human ChIP-seq at all
+  priority.factors <- c(
+    "SPI1", "SPIB", "CEBPA", "CEBPB", "CEBPD", "CEBPE", "ETS1", "ELF1",
+    "GABPA", "ERG", "FLI1", "BATF", "JUN", "JUNB", "JUND", "FOS",
+    "FOSL1", "FOSL2", "EBF1", "POU2F2", "NFKB1", "RELA"
+  )
+  ct.order <- c("Monocytes", "T-cells", "B-cells", "GM12878\n(cell line)")
+  cov.ct <- c(monocyte = "Monocytes", Tcell = "T-cells", Bcell = "B-cells",
+              GM12878 = "GM12878\n(cell line)")
+
+  coverage <- chipA[, .(sites = max(n_supported, na.rm = TRUE),
+                        motifs = .N), by = .(factor, methylome)]
+  coverage[, cell := factor(cov.ct[methylome], levels = ct.order)]
+  grid <- CJ(factor = priority.factors, cell = factor(ct.order, levels = ct.order))
+  coverage <- merge(grid, coverage, by = c("factor", "cell"), all.x = TRUE)
+
+  f.order <- coverage[, .(tot = sum(!is.na(sites))), by = factor][order(tot, factor)]
+  coverage[, factor := factor(factor, levels = f.order$factor)]
+  none <- f.order[tot == 0, factor]
+
+  only.line <- setdiff(
+    coverage[cell == "GM12878\n(cell line)" & !is.na(sites), as.character(factor)],
+    coverage[cell != "GM12878\n(cell line)" & !is.na(sites), as.character(factor)]
+  )
+  log_info(
+    "TF ChIP coverage: ", length(priority.factors) - length(none), " of ",
+    length(priority.factors), " factors testable in these four cell types, ",
+    length(only.line), " of them only in GM12878"
+  )
+
+  # every cell carries a mark: a sized dot where data exists, a grey cross
+  # where it does not, so the absences read as absences rather than as an
+  # empty panel. The factors with no data anywhere are separated below a rule
+  coverage[, tested := !is.na(sites)]
+  rule.y <- length(none) + 0.5
+
+  p_cov <- ggplot(coverage, aes(x = cell, y = factor)) +
+    geom_point(data = coverage[tested == FALSE], shape = 4, size = 1.3,
+               colour = "grey78", stroke = 0.5) +
+    geom_point(data = coverage[tested == TRUE], aes(size = sites),
+               colour = ink.mark, alpha = 0.85) +
+    geom_hline(yintercept = rule.y, linewidth = 0.3, colour = "grey70",
+               linetype = "dotted") +
+    annotate("text", x = 0.55, y = rule.y - 0.35, hjust = 0, vjust = 1,
+             label = sprintf("no ChIP-seq in any of these\ncell types (n = %d)",
+                             length(none)),
+             size = 2.3, colour = ink.muted) +
+    scale_size_continuous(range = c(1.4, 5.5), trans = "log10",
+                          breaks = c(300, 3000, 30000),
+                          labels = c("300", "3k", "30k")) +
+    scale_x_discrete(position = "top") +
+    labs(
+      x = NULL, y = "ChIP-seq target", size = "ChIP supported sites",
+      title = "Only one cell type carries more than two targets",
+      subtitle = sprintf("%d of %d testable, %d only in GM12878",
+                         length(priority.factors) - length(none),
+                         length(priority.factors), length(only.line))
+    ) +
+    guides(size = guide_legend(nrow = 1, title.position = "top")) +
+    base_theme +
+    theme(
+      panel.grid.major.y = element_line(linewidth = 0.2, colour = "grey94"),
+      axis.text.y = element_text(size = base.size - 2),
+      axis.text.x = element_text(size = base.size - 2),
+      axis.line = element_blank(),
+      axis.ticks = element_blank(),
+      plot.title = element_text(hjust = 0, face = "plain", size = base.size),
+      legend.position = "bottom"
     )
 
-    examples <- rbindlist(lapply(seq_len(nrow(picked)), function(i) {
-      m <- picked$motif[i]
-      tf <- picked$viper_tf[i]
-      rbindlist(list(
-        data.table(
-          motif = m, measure = "methylTFR deviation Z-score",
-          r = picked$r_mtfr[i], chip = as.numeric(chip_mat[m, ]),
-          value = as.numeric(mtfr_z[m, chip_samples]), celltype = chip_types
-        ),
-        data.table(
-          motif = m, measure = "VIPER activity",
-          r = picked$r_viper[i], chip = as.numeric(chip_mat[m, ]),
-          value = as.numeric(viper_act[tf, chip_rna]), celltype = chip_types
-        )
-      ))
-    }))
-    examples[, motif_lab := factor(motif, levels = picked$motif)]
-    # Short row labels, the long ones were clipped by the strip
-    examples[, measure_lab := factor(
-      fifelse(measure == "VIPER activity", "VIPER", "methylTFR"),
-      levels = c("methylTFR", "VIPER")
-    )]
-    r_lab <- unique(examples[, .(motif_lab, measure_lab, r)])
+  # F) the paired shift, summarised. The 28 individual comparisons are drawn
+  # in the second supplementary; here only the group medians, so the figure
+  # stays readable and the split between the cell line and the primary cells
+  # is visible rather than hidden inside a pooled median
+  chipA[, cells := factor(
+    ifelse(primary, "Primary cells", "GM12878 (cell line)"),
+    levels = c("GM12878 (cell line)", "Primary cells")
+  )]
+  chipA[, cells_n := paste0(cells, "\nn = ", .N), by = cells]
+  chipA[, cells_n := factor(cells_n, levels = unique(cells_n[order(cells)]))]
 
-    p_g <- ggplot(examples, aes(x = chip, y = value)) +
-      geom_smooth(
-        method = "lm", formula = y ~ x, se = FALSE,
-        colour = fit_colour, linewidth = 0.7
-      ) +
-      geom_point(aes(colour = celltype), size = 1.6, alpha = 0.9) +
-      geom_text(
-        data = r_lab, inherit.aes = FALSE,
-        aes(x = -Inf, y = Inf, label = sprintf("r = %.2f", r)),
-        hjust = -0.2, vjust = 1.4, size = 2.6, colour = "grey25"
-      ) +
-      facet_grid(measure_lab ~ motif_lab, scales = "free_y") +
-      scale_colour_manual(values = cell_type_colors, name = NULL, drop = TRUE) +
-      labs(
-        x = sprintf(
-          "%s signal at the motif's distal sites, per sample\n(standardised across motifs within each sample)",
-          mark.primary
-        ),
-        y = "Modality value, per sample"
-      ) +
-      base_theme +
-      theme(legend.position = "bottom")
-  }
-
-  #############################################################
-  # Reported in the log, the alternative framing if the per motif
-  # correlations are ever questioned: agreement taken per sample
-  # across the motifs instead of per motif across the samples
-  #############################################################
-
-  chip_mat <- chip$signals[[mark.primary]]
-  shared <- intersect(rownames(chip_mat), rownames(mtfr_z))
-  per_sample <- vapply(colnames(chip_mat), function(s) {
-    suppressWarnings(cor(chip_mat[shared, s], mtfr_z[shared, s],
-      method = "spearman", use = "complete.obs"
-    ))
-  }, numeric(1))
-  log_info(
-    "Per sample agreement across ", length(shared), " motifs: median rho = ",
-    round(median(per_sample, na.rm = TRUE), 3), ", ",
-    sum(per_sample < 0, na.rm = TRUE), " of ", sum(is.finite(per_sample)),
-    " samples negative as predicted"
+  split_long <- melt(
+    chipA[, .(row_key, cells_n, primary,
+              `own methylome` = delta, `other lineage` = delta_control)],
+    id.vars = c("row_key", "cells_n", "primary"),
+    variable.name = "scored_against", value.name = "difference"
   )
+  split_med <- split_long[, .(m = median(difference, na.rm = TRUE)),
+                          by = .(cells_n, scored_against)]
+
+  # boxes rather than paired lines: at 23 comparisons the lines cross into
+  # spaghetti and the pairing is already explicit in the second supplementary
+  p_split <- ggplot(split_long, aes(x = scored_against, y = difference)) +
+    geom_hline(yintercept = 0, linewidth = 0.3, colour = "grey75") +
+    geom_boxplot(aes(colour = scored_against), fill = NA, width = 0.5,
+                 linewidth = 0.4, outlier.shape = NA) +
+    geom_point(aes(colour = scored_against), size = 1.5, alpha = 0.7,
+               position = position_jitter(width = 0.12, height = 0, seed = 42)) +
+    geom_text(
+      data = split_med, aes(y = m, label = sprintf("%.2f", m)),
+      nudge_x = 0.38, hjust = 0, size = 2.6, colour = ink.muted
+    ) +
+    scale_x_discrete(expand = expansion(add = c(0.45, 0.8))) +
+    facet_wrap(~cells_n, nrow = 1) +
+    scale_colour_manual(values = c("own methylome" = col.matched,
+                                   "other lineage" = col.control),
+                        guide = "none") +
+    labs(
+      x = NULL, y = "ChIP supported minus\nCpG/GC matched unsupported sites",
+      title = "Each comparison, scored twice",
+      subtitle = sprintf("one point per motif: %d motifs, %d targets",
+                         nrow(chipA), uniqueN(chipA$factor))
+    ) +
+    base_theme +
+    theme(plot.title = element_text(hjust = 0, face = "plain", size = base.size))
+
+  # G) the same two numbers against each other
+  lim <- range(c(chipA$delta, chipA$delta_control), na.rm = TRUE)
+  spec_lab <- chipA[primary == TRUE | specificity <= 0]
+
+  p_spec <- ggplot(chipA, aes(x = delta_control, y = delta)) +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed",
+                linewidth = 0.3, colour = "grey60") +
+    geom_point(aes(shape = primary), size = 2, colour = ink.mark) +
+    geom_text_repel(data = spec_lab, aes(label = motif), size = 2.4,
+                    colour = ink.muted, min.segment.length = 0,
+                    segment.size = 0.2, box.padding = 0.3, max.overlaps = Inf) +
+    scale_shape_manual(values = c(`TRUE` = 16, `FALSE` = 1),
+                       labels = c(`TRUE` = "primary cells", `FALSE` = "cell line")) +
+    coord_equal(xlim = lim, ylim = lim) +
+    labs(
+      x = "scored against another lineage",
+      y = "scored against its own methylome", shape = NULL,
+      title = "Cell type specific below the diagonal",
+      subtitle = sprintf("%d of %d motifs",
+                         sum(chipA$specificity > 0, na.rm = TRUE),
+                         sum(is.finite(chipA$specificity)))
+    ) +
+    base_theme +
+    theme(legend.position = "bottom",
+          plot.title = element_text(hjust = 0, face = "plain", size = base.size))
+
 }
 
 #####################################################################
@@ -830,9 +768,9 @@ build_row <- function(items) {
 
 row_specs <- list(
   list(items = list(list(p_a, 1), list(p_b, 1.5)), height = 1),
-  list(items = list(list(p_c, 1), list(p_d, 1), list(p_dist, 1)), height = 1.1),
-  list(items = list(list(p_e, 1)), height = 1.25),
-  list(items = list(list(p_g, 1)), height = 1.5)
+  list(items = list(list(p_c, 1), list(p_d, 1), list(p_h27, 1.2)), height = 1.1),
+  list(items = list(list(p_cov, 0.9), list(p_split, 1.25), list(p_spec, 1)),
+       height = 1.5)
 )
 
 rows <- list()

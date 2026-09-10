@@ -57,3 +57,38 @@ rsconnect/
 .nfs*
 .fuse_hidden*
 Rplots.pdf
+# ---------------------------------------------------------------
+# TF ChIP-seq validation, scripts 12-14 (see notes/tf_chip_validation.md)
+# Downloaded peak files and the resumable caches. Some of these are
+# hundreds of MB, none of them belong in the repository: everything here
+# is reproducible by re-running 12.
+# The small result CSVs under tables/chip_validation/ ARE tracked on
+# purpose and are not matched by anything below.
+# ---------------------------------------------------------------
+tf_chip_peaks/
+tf_chip_validation/
+chip_signal/
+
+# peak and signal formats, wherever they land
+*.bed
+*.bed.gz
+*.narrowPeak
+*.narrowPeak.gz
+*.broadPeak
+*.broadPeak.gz
+*.bigwig
+*.bigWig
+*.bw
+
+# bulk archives from UniBind / ReMap / ENCODE
+*.tar.gz
+damo_hg38_*
+remap2022_*
+ENCFF*
+
+# cached GRanges from 12 and 13, but not the tracked result tables
+tables/chip_validation/*.rds
+tables/chip_validation/*.RDS
+
+# local working notes, not part of the published repo
+notes/
