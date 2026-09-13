@@ -92,3 +92,4 @@ tables/chip_validation/*.RDS
 
 # local working notes, not part of the published repo
 notes/
+methylTFR_tmp/

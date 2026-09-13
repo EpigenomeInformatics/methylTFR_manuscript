@@ -76,10 +76,6 @@ options(timeout = 3600)
 #
 # The three primary methylomes are all donor ENCDO661BYS, so any contrast
 # between them is donor controlled.
-#
-# K562 is excluded. It is a BCR-ABL1 chronic myeloid leukaemia line with an
-# erythroid phenotype rather than an immune cell, and cancer lines carry
-# globally distorted methylomes, which is the variable measured here.
 #####################################################################
 
 methylomes <- data.table(
@@ -196,11 +192,6 @@ log_info(nrow(manifest), " peak sets with a paired methylome")
 
 #####################################################################
 # Fetch and read the methylomes
-#
-# read_methylome(type = "encode") computes mscore as V11 / V10. In an ENCODE
-# bedMethyl column 10 is read coverage and column 11 is percent methylated,
-# so that quotient is not a fraction: on this data it spans 0 to 20. Parsed
-# here instead, leaving the package untouched.
 #####################################################################
 
 read_encode_bedmethyl <- function(filename, cov_threshold = 1) {
@@ -247,12 +238,6 @@ bin_msites <- lapply(msites, addGCBintoMethylome, gcdist = gc_dist)
 
 #####################################################################
 # Preflight
-#
-# getGCfreq() returns one table per motif, so it carries no information about
-# which sites are being scored and the expected term cancels in any split of
-# one motif's sites. The GC extremes of a single motif are scored both ways
-# and the run stops unless the subset tables move the expected term by at
-# least a tenth of what the observed term moves.
 #####################################################################
 
 pf.key <- manifest$methylome[1]
