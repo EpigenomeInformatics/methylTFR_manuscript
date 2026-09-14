@@ -142,8 +142,8 @@ motif_mean_deviations <- function(motif, dev_list, groups) {
       return(NA_real_)
     }
     idx <- which(rownames(mat) == motif)
-    if (length(idx) == 0) idx <- grep(motif, rownames(mat), fixed = TRUE)
     if (length(idx) == 0) {
+      log_warn(motif, " is not a row of the deviations, no score for ", g)
       return(NA_real_)
     }
     if (length(idx) > 1) {

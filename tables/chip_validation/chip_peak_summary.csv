@@ -1,0 +1,33 @@
+set_id,factor,bp_celltype,chip_label,match,source,n_datasets,n_peaks,status
+SPI1_monocyte_ReMap,SPI1,mono,primary CD14+ monocyte,primary,ReMap2022,1,51671,single_dataset
+CEBPB_monocyte_ReMap,CEBPB,mono,primary CD14+ monocyte,primary,ReMap2022,1,25771,single_dataset
+SPI1_macrophage_ReMap,SPI1,Mf,monocyte-derived macrophage,primary,ReMap2022,2,1887,consensus
+SPI1_DC_ReMap,SPI1,DC,dendritic cell,primary,ReMap2022,2,2139,consensus
+SPI1_neutrophil_ReMap,SPI1,gran,primary neutrophil,primary (verify),ReMap2022,2,32040,consensus
+SPI1_primaryB_ReMap,SPI1,Bcell,primary B cell,primary (verify),ReMap2022,2,8780,consensus
+ETS1_CD4T_UniBind,ETS1,Tcell,primary CD4+ T cell,primary,UniBind,4,10705,consensus
+RELA_CD4Th1_UniBind,RELA,Tcell,primary CD4+ Th1,primary,UniBind,1,9738,single_dataset
+CEBPB_MDM_UniBind,CEBPB,Mf,monocyte-derived macrophage,primary,UniBind,3,28099,consensus
+RELA_MDM_UniBind,RELA,Mf,monocyte-derived macrophage,primary,UniBind,2,6006,consensus
+SPI1_GM12878_ENCODE,SPI1,Bcell,GM12878,proxy,ENCODE,1,43195,single_dataset
+EBF1_GM12878_ENCODE,EBF1,Bcell,GM12878,proxy,ENCODE,1,39758,single_dataset
+POU2F2_GM12878_ENCODE,POU2F2,Bcell,GM12878,proxy,ENCODE,1,25709,single_dataset
+ELF1_GM12878_ENCODE,ELF1,Bcell,GM12878,proxy,ENCODE,1,24054,single_dataset
+ETS1_GM12878_ENCODE,ETS1,Bcell,GM12878,proxy,ENCODE,1,12100,single_dataset
+GABPA_GM12878_ENCODE,GABPA,Bcell,GM12878,proxy,ENCODE,1,12470,single_dataset
+BATF_GM12878_ENCODE,BATF,Bcell,GM12878,proxy,ENCODE,1,35846,single_dataset
+CEBPB_GM12878_ENCODE,CEBPB,Bcell,GM12878,proxy,ENCODE,1,4254,single_dataset
+JUNB_GM12878_ENCODE,JUNB,Bcell,GM12878,proxy,ENCODE,1,31179,single_dataset
+JUND_GM12878_ENCODE,JUND,Bcell,GM12878,proxy,ENCODE,1,7348,single_dataset
+FOS_GM12878_ENCODE,FOS,Bcell,GM12878,proxy,ENCODE,0,,all_below_min_peaks
+RELA_GM12878_ENCODE,RELA,Bcell,GM12878,proxy,ENCODE,1,12603,single_dataset
+SPI1_K562_ENCODE,SPI1,eryt,K562,proxy,ENCODE,1,31921,single_dataset
+CEBPB_K562_ENCODE,CEBPB,eryt,K562,proxy,ENCODE,1,49531,single_dataset
+ELF1_K562_ENCODE,ELF1,eryt,K562,proxy,ENCODE,1,30734,single_dataset
+ETS1_K562_ENCODE,ETS1,eryt,K562,proxy,ENCODE,1,11690,single_dataset
+GABPA_K562_ENCODE,GABPA,eryt,K562,proxy,ENCODE,1,15435,single_dataset
+FOSL1_K562_ENCODE,FOSL1,eryt,K562,proxy,ENCODE,1,12556,single_dataset
+FOS_K562_ENCODE,FOS,eryt,K562,proxy,ENCODE,1,7734,single_dataset
+JUN_K562_ENCODE,JUN,eryt,K562,proxy,ENCODE,1,20648,single_dataset
+JUNB_K562_ENCODE,JUNB,eryt,K562,proxy,ENCODE,1,4957,single_dataset
+JUND_K562_ENCODE,JUND,eryt,K562,proxy,ENCODE,1,45746,single_dataset

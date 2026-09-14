@@ -136,9 +136,7 @@ motif_mean_activity <- function(motif, dev_list, groups) {
       idx <- which(rownames(mat) == sub("_[0-9]+$", "", motif))
     }
     if (length(idx) == 0) {
-      idx <- grep(motif, rownames(mat), fixed = TRUE)
-    }
-    if (length(idx) == 0) {
+      message(motif, " is not a row of the deviations, no score for ", g)
       return(NA_real_)
     }
     vals <- mat[idx[1], ]

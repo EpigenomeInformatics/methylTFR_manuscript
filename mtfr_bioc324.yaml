@@ -1,0 +1,79 @@
+# methyltfr_bioc324 -- R 4.6 / Bioconductor 3.24 (devel)
+#
+# Purpose: an environment in which the Bioconductor submissions
+# (methylTFRAnnotationHg38, methylTFRAnnotationMm10) can actually be
+# tested. The records AH122289-AH122303 live on the DEVEL hub only, and
+# the annotation metadata declares BiocVersion 3.24, so nothing older
+# than Bioc devel can see them.
+#
+# This does NOT replace mtfr.yaml. Keep that one pinned at R 4.3 /
+# Bioc 3.17 for the manuscript analyses.
+#
+# Why this file contains no r-* packages
+# --------------------------------------
+# conda builds every R package against one R minor version. conda-forge
+# shipped r-base 4.6 in June 2026 but has not rebuilt the ecosystem on
+# top of it -- r-logger, for one, stops at 4.5 -- so any r-* dependency
+# here is a coin flip against that migration, and the solver fails on
+# whichever one it reaches first. Rather than pin around them one at a
+# time, conda provides only R itself, the toolchain and the system
+# libraries; every R package comes from CRAN/Bioconductor via
+# bootstrap_bioc324.R, built from source against this R.
+#
+# bioconda is excluded for the same class of reason: it builds
+# bioconductor-* against the current RELEASE, not devel, which would
+# silently pin the environment below 3.24.
+#
+# Cost: the bootstrap compiles rather than unpacks, so budget 30-45
+# minutes on first run. See the header of bootstrap_bioc324.R for two
+# faster alternatives if that is not worth it.
+#
+# Usage:
+#   mamba env create -f mtfr_bioc324.yaml
+#   conda activate methyltfr_bioc324
+#   Rscript bootstrap_bioc324.R
+#   Rscript test_annotation_pkgs.R
+
+name: methyltfr_bioc324
+
+channels:
+  - conda-forge
+
+dependencies:
+  - r-base=4.6.*
+
+  # toolchain -- everything R-level is built from source
+  - c-compiler
+  - cxx-compiler
+  - fortran-compiler
+  - make
+  - pkg-config
+  - git
+
+  # system libraries the source builds link against
+  - curl
+  - libcurl
+  - openssl
+  - libxml2
+  - zlib
+  - bzip2
+  - xz
+  - pcre2
+  - libdeflate
+  - hdf5
+  - gsl
+  - glpk
+  - libgit2
+
+  # graphics stack (ragg / systemfonts / textshaping, pulled in by devtools)
+  - libpng
+  - libjpeg-turbo
+  - libtiff
+  - freetype
+  - fontconfig
+  - harfbuzz
+  - fribidi
+  - cairo
+
+  # vignette rendering
+  - pandoc

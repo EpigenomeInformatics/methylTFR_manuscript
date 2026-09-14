@@ -1,0 +1,91 @@
+"label","celltype","measure","value"
+"HNF4G
+VIPER r = 0.54, mRNA r = 0.14","Granulocytes","methylTFR deviation",0.0323535224136228
+"HNF4G
+VIPER r = 0.54, mRNA r = 0.14","Monocytes","methylTFR deviation",1.13065614660659
+"HNF4G
+VIPER r = 0.54, mRNA r = 0.14","Macrophages","methylTFR deviation",-0.130637869159059
+"HNF4G
+VIPER r = 0.54, mRNA r = 0.14","Dendritic cells","methylTFR deviation",0.525593325312345
+"HNF4G
+VIPER r = 0.54, mRNA r = 0.14","T-cells","methylTFR deviation",-1.5579651251735
+"HNF4G
+VIPER r = 0.54, mRNA r = 0.14","Granulocytes","VIPER activity",-0.230707201161559
+"HNF4G
+VIPER r = 0.54, mRNA r = 0.14","Monocytes","VIPER activity",0.315642401813264
+"HNF4G
+VIPER r = 0.54, mRNA r = 0.14","Macrophages","VIPER activity",0.568151352992059
+"HNF4G
+VIPER r = 0.54, mRNA r = 0.14","Dendritic cells","VIPER activity",0.960135991358014
+"HNF4G
+VIPER r = 0.54, mRNA r = 0.14","T-cells","VIPER activity",-1.61322254500178
+"HNF4G
+VIPER r = 0.54, mRNA r = 0.14","Granulocytes","TF mRNA",-0.486686043601038
+"HNF4G
+VIPER r = 0.54, mRNA r = 0.14","Monocytes","TF mRNA",1.78443060471895
+"HNF4G
+VIPER r = 0.54, mRNA r = 0.14","Macrophages","TF mRNA",-0.324372473915835
+"HNF4G
+VIPER r = 0.54, mRNA r = 0.14","Dendritic cells","TF mRNA",-0.486686043601038
+"HNF4G
+VIPER r = 0.54, mRNA r = 0.14","T-cells","TF mRNA",-0.486686043601038
+"HNF4A
+VIPER r = 0.41, mRNA r = 0.02","Granulocytes","methylTFR deviation",0.216820733648611
+"HNF4A
+VIPER r = 0.41, mRNA r = 0.02","Monocytes","methylTFR deviation",0.961567376632151
+"HNF4A
+VIPER r = 0.41, mRNA r = 0.02","Macrophages","methylTFR deviation",0.034495017175583
+"HNF4A
+VIPER r = 0.41, mRNA r = 0.02","Dendritic cells","methylTFR deviation",0.463989261456892
+"HNF4A
+VIPER r = 0.41, mRNA r = 0.02","T-cells","methylTFR deviation",-1.67687238891324
+"HNF4A
+VIPER r = 0.41, mRNA r = 0.02","Granulocytes","VIPER activity",0.510185248876401
+"HNF4A
+VIPER r = 0.41, mRNA r = 0.02","Monocytes","VIPER activity",0.238486737531635
+"HNF4A
+VIPER r = 0.41, mRNA r = 0.02","Macrophages","VIPER activity",1.15441852413735
+"HNF4A
+VIPER r = 0.41, mRNA r = 0.02","Dendritic cells","VIPER activity",-0.432278361799288
+"HNF4A
+VIPER r = 0.41, mRNA r = 0.02","T-cells","VIPER activity",-1.4708121487461
+"HNF4A
+VIPER r = 0.41, mRNA r = 0.02","Granulocytes","TF mRNA",-0.447213595499958
+"HNF4A
+VIPER r = 0.41, mRNA r = 0.02","Monocytes","TF mRNA",-0.447213595499958
+"HNF4A
+VIPER r = 0.41, mRNA r = 0.02","Macrophages","TF mRNA",1.78885438199983
+"HNF4A
+VIPER r = 0.41, mRNA r = 0.02","Dendritic cells","TF mRNA",-0.447213595499958
+"HNF4A
+VIPER r = 0.41, mRNA r = 0.02","T-cells","TF mRNA",-0.447213595499958
+"NFKB1
+VIPER r = 0.44, mRNA r = -0.06","Granulocytes","methylTFR deviation",0.768853506367295
+"NFKB1
+VIPER r = 0.44, mRNA r = -0.06","Monocytes","methylTFR deviation",0.442058601234354
+"NFKB1
+VIPER r = 0.44, mRNA r = -0.06","Macrophages","methylTFR deviation",-0.0927939092617732
+"NFKB1
+VIPER r = 0.44, mRNA r = -0.06","Dendritic cells","methylTFR deviation",0.57666613531593
+"NFKB1
+VIPER r = 0.44, mRNA r = -0.06","T-cells","methylTFR deviation",-1.69478433365581
+"NFKB1
+VIPER r = 0.44, mRNA r = -0.06","Granulocytes","VIPER activity",-0.328937859403446
+"NFKB1
+VIPER r = 0.44, mRNA r = -0.06","Monocytes","VIPER activity",0.0821796085060871
+"NFKB1
+VIPER r = 0.44, mRNA r = -0.06","Macrophages","VIPER activity",0.336398592603568
+"NFKB1
+VIPER r = 0.44, mRNA r = -0.06","Dendritic cells","VIPER activity",1.32774397847847
+"NFKB1
+VIPER r = 0.44, mRNA r = -0.06","T-cells","VIPER activity",-1.41738432018468
+"NFKB1
+VIPER r = 0.44, mRNA r = -0.06","Granulocytes","TF mRNA",-0.285574373554795
+"NFKB1
+VIPER r = 0.44, mRNA r = -0.06","Monocytes","TF mRNA",-0.315667404104833
+"NFKB1
+VIPER r = 0.44, mRNA r = -0.06","Macrophages","TF mRNA",-1.1924030991284
+"NFKB1
+VIPER r = 0.44, mRNA r = -0.06","Dendritic cells","TF mRNA",1.52467403086213
+"NFKB1
+VIPER r = 0.44, mRNA r = -0.06","T-cells","TF mRNA",0.268970845925899

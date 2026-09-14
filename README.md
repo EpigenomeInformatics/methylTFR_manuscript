@@ -110,11 +110,26 @@ alongside the methylation data they were computed from.
 | `07_rna_mofa_prep.R` | RNA counts matrix and the WGBS to RNA sample map |
 | `07b_viper_prep.R` | VIPER transcription factor activity from those counts, against a DoRothEA regulon |
 | `08_bp_mofa.R` | MOFA2 integration of deviations and expression, factor and modality figures, paired heatmaps |
-| `09_bp_viper_mofa.R` | MOFA2 integration of deviations and VIPER activity, and the paired methylTFR / VIPER heatmap of the differential motifs |
+| `08_bp_viper_mofa.R` | MOFA2 integration of deviations and VIPER activity, and the paired methylTFR / VIPER heatmap of the differential motifs |
+| `09_bp_supplementary.R` | the Blueprint supplementary: PCA before and after the correction, motif variability, the expected scores and where their variance sits, footprints and the B versus T differential |
+| `10_bp_viper_supplementary.R` | the VIPER supplementary: association with the expectation, agreement of expression and VIPER with the deviations, H3K27ac at the distal sites, and the TF ChIP occupancy panels |
+| `11_bp_chip_validation.R` | histone ChIP signal and aggregate profiles at the distal motif sites; computes and stores only, panel E of `10` draws it |
+| `12_bp_tf_chip_peaks.R` | downloads and caches the TF ChIP-seq peak sets, writes the manifest |
+| `13_bp_tf_chip_validation.R` | the occupancy test: ChIP supported against CpG/GC matched unsupported sites, each peak set scored against a methylome of its own cell type and against another lineage |
+| `14_bp_tf_chip_figures.R` | the second supplementary, the detail behind panels G and H of `10` |
 
-`08` and `09` are two readings of the same samples: `08` pairs a motif with the
-expression of its transcription factor, `09` with the activity VIPER infers for
-it. `09` needs `06` for the differential motifs and `07b` for the activities.
+The two `08` scripts are two readings of the same samples: `08_bp_mofa.R` pairs
+a motif with the expression of its transcription factor, `08_bp_viper_mofa.R`
+with the activity VIPER infers for it. The VIPER one needs `06` for the
+differential motifs and `07b` for the activities.
+
+`12` to `14` are the transcription factor occupancy validation. `12` fetches
+the peaks, `13` runs the split and writes `tables/chip_validation/`, and `10`
+and `14` draw it. All three are resumable: anything already cached under
+`analysis.dir` is skipped. The peak sets and the ENCODE methylomes are large
+and are not tracked, so `12` and `13` have to be run before either figure.
+A histone mark reports chromatin state rather than occupancy, which is why
+`11` is kept only for the aggregate profile in panel E of `10`.
 
 A motif name is not a gene symbol. JASPAR writes heterodimers as `FOS::JUNB` and
 variants as `JUN(var.2)`, so `09` splits on `::`, strips the variant suffix and

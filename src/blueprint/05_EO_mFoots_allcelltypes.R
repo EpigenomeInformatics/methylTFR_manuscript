@@ -142,12 +142,9 @@ ensure_msites_cols <- function(gr, label) {
 motif_mean_deviations <- function(motif, dev_mat, dev_grps, groups) {
   idx <- which(rownames(dev_mat) == motif)
   if (length(idx) == 0) {
-    idx <- grep(paste0("\\b", motif, "\\b"), rownames(dev_mat), ignore.case = TRUE)
-    if (length(idx) > 1) {
-      log_warn(motif, ": ", length(idx), " matching rows in the deviation matrix, using the first")
-      idx <- idx[1]
-    }
+    log_warn(motif, " is not a row of the deviation matrix, its scores are omitted")
   }
+  idx <- idx[1]
   vapply(groups, function(g) {
     if (length(idx) == 0) {
       return(NA_real_)
