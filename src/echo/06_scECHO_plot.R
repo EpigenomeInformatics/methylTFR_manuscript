@@ -2,7 +2,7 @@
 # 06_scECHO_plot.R
 # Created on 15-09-26 by Irem Begum Gunduz
 # Merged scECHO (06) and ATAC (07) Plotting Script
-# Includes MAGIC imputation for methylTFR, caching for ATAC/ArchR,
+# Includes optional MAGIC imputation for methylTFR, caching for ATAC/ArchR,
 # and a unified side-by-side patchwork layout.
 
 suppressPackageStartupMessages({
@@ -13,13 +13,13 @@ suppressPackageStartupMessages({
   library(patchwork)
   library(logger)
   library(methylTFR)
-  library(Rmagic) # For magic imputation
+  library(Rmagic) # For optional MAGIC imputation
 })
 set.seed(42)
 
 # Point reticulate at the Python that has magic-impute, BEFORE any Python is
 # initialised. Set python.bin to the interpreter you pip-installed magic-impute
-# into (e.g. `which python` inside the conda env).
+# into (e.g. `which python` inside the conda env). Only needed if run.magic = TRUE.
 python.bin <- "/icbb/projects/share/software/packages/miniconda3/envs/methyltfr/bin/python"
 if (file.exists(python.bin)) {
   Sys.setenv(RETICULATE_PYTHON = python.bin)
@@ -60,11 +60,25 @@ cell.id.col <- "Cell_UID"
 pal.low <- "#5E3C99"; pal.mid <- "grey92"; pal.high <- "#E66101"
 clip.quantile <- 0.98
 
+# -- MAGIC imputation (methylTFR) --
+# OFF by default. MAGIC smooths values over a cell-cell graph it BUILDS FROM the
+# feature matrix it is given. These deviation files carry only a couple of motifs
+# (the run log shows "... on N cells and 2 genes" + a graphtools zero-distance
+# warning), which is far too few to build a meaningful graph -- MAGIC then just
+# collapses everything toward the mean and the panel looks worse, not better.
+# Enable this ONLY if dev.mat below holds the FULL motif set (i.e. you recomputed
+# methylTFR deviations over all JASPAR motifs) AND Python magic-impute is on the
+# interpreter above. With the current thin deviation files, leave it FALSE.
+run.magic  <- FALSE
+magic.knn  <- 5      # neighbours for the affinity graph
+magic.t    <- 3      # diffusion time; explicit value beats "auto" for sparse data
+magic.npca <- 50     # PCA dims before the graph (clamped to n_motifs - 1)
+
 # -- ATAC (ArchR) Settings --
 outputDir <- "/icbb/projects/igunduz/archr_projects/icbb/projects/igunduz/archr_project_011023/"
 embedding <- "UMAPHarmony"
 gene.matrix <- "GeneScoreMatrix"
-motif.matrix <- "MotifMatrix"
+motif.matrix <- "jaspar2020Matrix"
 gene.pal <- ArchRPalettes[["horizonExtra"]]
 motif.pal <- ArchRPalettes[["solarExtra"]]
 gene.quant <- c(0.01, 0.99)
@@ -156,26 +170,11 @@ if (!is.null(atac_data) && !is.null(atac_data$motif)) {
     }
     colnames(m) <- colnames(se)
 
-    # GeneScoreMatrix rows are exact gene symbols; MotifMatrix rows carry a suffix
-    # (e.g. "SPIB_336"), so match those by TF prefix and relabel to the TF name.
-    if (z_scores) {
-      picked <- vapply(wanted, function(tf) {
-        h <- grep(paste0("^", tf, "(_|$)"), rownames(m), value = TRUE)
-        if (length(h) == 0) NA_character_ else h[1]
-      }, character(1))
-      keep <- !is.na(picked)
-      log_info(useMatrix, ": matched ", sum(keep), "/", length(wanted),
-        " features among ", nrow(m), " rows (e.g. ",
-        paste(utils::head(rownames(m), 3), collapse = ", "), ")")
-      if (!any(keep)) { log_warn(useMatrix, ": none of the features found"); return(NULL) }
-      out <- as.matrix(m[picked[keep], , drop = FALSE])
-      rownames(out) <- wanted[keep]
-      out
-    } else {
-      hit <- intersect(wanted, rownames(m))
-      if (length(hit) == 0) { log_warn(useMatrix, ": none of the features found"); return(NULL) }
-      as.matrix(m[hit, , drop = FALSE])  # few features x all cells
-    }
+
+    hit <- intersect(wanted, rownames(m))
+    if (length(hit) == 0) { log_warn(useMatrix, ": none of the features found"); return(NULL) }
+    m[hit, , drop = FALSE]  # few features x all cells
+
   }
 
   gene.vals <- get_values(gene.matrix, features, z_scores = FALSE)
@@ -211,7 +210,7 @@ if (!is.null(atac_data) && !is.null(atac_data$motif)) {
 }
 
 #####################################################################
-# 2. Methylation Data Processing (scECHO with MAGIC Imputation)
+# 2. Methylation Data Processing (scECHO)
 #####################################################################
 
 log_info("Loading Methylation (LSI) data...")
@@ -245,43 +244,83 @@ motif.rows <- Reduce(intersect, lapply(mats, rownames))
 dev.mat <- do.call(cbind, lapply(mats, function(m) m[motif.rows, , drop = FALSE]))
 dev.mat <- dev.mat[, !duplicated(colnames(dev.mat)), drop = FALSE]
 
-# MAGIC imputation (OFF by default). MAGIC smooths over a cell-cell graph built
-# FROM the feature matrix it is given; with only these few motifs that graph is
-# degenerate and collapses every cell toward the mean (~0 z-score -> grey). It
-# needs the full methylation feature space, which 05_scECHO.R does not output, so
-# the raw deviations are used here. Set TRUE only if dev.mat holds the full set
-# (and Python magic-impute is installed).
-run.magic <- FALSE
-dev.cells <- colnames(dev.mat)             # keep ids; magic drops them
-dev.mat[!is.finite(dev.mat)] <- 0          # sanitise before z-scoring / MAGIC
-if (run.magic && requireNamespace("Rmagic", quietly = TRUE)) {
-  log_info("Running MAGIC imputation on methylation deviations...")
-  imp <- tryCatch(Rmagic::magic(t(dev.mat))$result,
-    error = function(e) {
-      log_warn("MAGIC unavailable (", conditionMessage(e),
-        "); using raw deviations. Enable with: pip install magic-impute")
+# methylTFR emits Inf/NaN for motifs uncovered in a cell. Keep these as NA so they
+# are dropped from the SD and simply not plotted; forcing them to 0 would pull
+# real signal toward grey. (The MAGIC branch below 0-fills its own input copy.)
+dev.mat[!is.finite(dev.mat)] <- NA
+
+#####################################################################
+# 2b. MAGIC imputation (optional; OFF by default -- see config note)
+#
+# Runs MAGIC on the full dev.mat (all `motif.rows` x cells) so the affinity graph
+# is built from the full methylation feature space, then returns only `features`.
+# With the current thin deviation files this graph is degenerate (see config), so
+# run.magic is FALSE and this block is skipped -- dev.mat passes through unchanged.
+#####################################################################
+
+magic.done <- FALSE
+if (run.magic) {
+  py.ok <- requireNamespace("reticulate", quietly = TRUE) &&
+    tryCatch(reticulate::py_module_available("magic"), error = function(e) FALSE)
+
+  if (!py.ok) {
+    log_warn("Python 'magic' module not importable for reticulate; plotting RAW ",
+             "deviations. Install into the interpreter above with:")
+    log_warn("    ", python.bin, " -m pip install magic-impute")
+  } else {
+    input <- t(dev.mat)                                   # cells x motifs (full space)
+    input[!is.finite(input)] <- 0                         # MAGIC needs a finite matrix
+    if (is.null(rownames(input))) rownames(input) <- colnames(dev.mat)
+    wanted <- intersect(features, colnames(input))
+    npca_cfg <- if (exists("magic.npca")) magic.npca else 50L   # tolerate missing config
+    npca <- max(2L, min(npca_cfg, ncol(input) - 1L))
+    log_info("MAGIC input: ", nrow(input), " cells x ", ncol(input),
+             " motifs; imputing: ", paste(wanted, collapse = ", "),
+             " (knn=", magic.knn, ", t=", magic.t, ", npca=", npca, ")")
+    if (ncol(input) < 10L)
+      log_warn("Only ", ncol(input), " motifs in dev.mat -- MAGIC's graph will be ",
+               "degenerate. See the run.magic note in the config.")
+
+    imp <- tryCatch({
+      mg <- Rmagic::magic(input, genes = wanted,
+                          knn = magic.knn, t = magic.t, npca = npca)
+      m <- t(as.matrix(mg$result))                        # wanted x cells
+      m[, rownames(input), drop = FALSE]                  # align cells BY NAME
+    }, error = function(e) {
+      log_warn("MAGIC failed (", conditionMessage(e), "); plotting RAW deviations")
       NULL
     })
-  if (!is.null(imp)) {
-    dev.mat <- t(imp)
-    colnames(dev.mat) <- dev.cells         # restore Cell_UID column names
-    log_success("MAGIC imputation applied")
+
+    if (!is.null(imp)) {
+      for (g in rownames(imp)) {
+        raw.sd <- stats::sd(dev.mat[g, ], na.rm = TRUE)
+        imp.sd <- stats::sd(imp[g, ], na.rm = TRUE)
+        log_info(sprintf("  %-8s raw sd=%.4g  ->  MAGIC sd=%.4g", g, raw.sd, imp.sd))
+      }
+      dev.mat <- imp        # now holds ONLY the plotted motifs, MAGIC-smoothed
+      magic.done <- TRUE
+      log_success("MAGIC imputation applied to methylTFR deviations")
+    }
   }
-} else if (run.magic) {
-  log_warn("Rmagic not installed; using raw deviations")
 }
 
-# Row Z-score
+# Per-motif scaling (NOT a full z-score): divide each motif by its SD but DO NOT
+# subtract the mean. methylTFR deviations have a meaningful zero (= no methylation
+# preference), so grey must sit at zero. Subtracting the per-motif mean would
+# recenter grey on the AVERAGE cell, which paints a broadly-negative motif like
+# SPIB orange and flips the whole map. Scaling only keeps the good, zero-centred
+# look while putting every motif on a comparable unit-SD scale.
 row_zscore <- function(m) {
-  mu <- rowMeans(m, na.rm = TRUE)
   sdv <- apply(m, 1, stats::sd, na.rm = TRUE)
   sdv[!is.finite(sdv) | sdv == 0] <- 1
-  z <- (m - mu) / sdv
+  z <- m / sdv
   dimnames(z) <- dimnames(m)
   z
 }
 dev.mat <- row_zscore(dev.mat)
 plot_features <- intersect(features, rownames(dev.mat))
+if (length(plot_features) == 0)
+  log_warn("None of `features` present in dev.mat after processing")
 
 #####################################################################
 # 3. Plotting Setup & Functions
