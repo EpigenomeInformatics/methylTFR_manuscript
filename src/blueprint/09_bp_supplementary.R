@@ -4,16 +4,17 @@
 # 09_bp_supplementary.R
 # created on 06-09-2026 by Irem B Gunduz
 # The Blueprint supplementary figure
-#   A  PCA of the bias corrected deviations, with the cell type R2
-#   B  PCA of the uncorrected deviations, with the cell type R2
-#   C  Motif variability across all motifs, top motifs annotated
-#   D  Expected deviation scores, with their spread across samples
-#   E  Where the variance of the expectation sits, motif against sample
-#   F  PCA of the B and T cell subsets
-#   G  Observed and expected footprints of two motifs, B and T cells
-#   H  B versus T differential, one marker motif per lineage
-#   I  PCA of the Altius deviations, with the cell type R2
-#   J  Altius AP-1 and CEBP differentials across the cell type groups
+#   A  PCA of the deviations, uncorrected distal and bias corrected, cell type R2
+#   B  Scree of the distal deviation PCA
+#   C  Cumulative variance of the distal deviation PCA
+#   D  Motif variability across all motifs, top motifs annotated
+#   E  Expected deviation scores, with their spread across samples
+#   F  Where the variance of the expectation sits, motif against sample
+#   G  PCA of the B and T cell subsets
+#   H  Observed and expected footprints of two motifs, B and T cells
+#   I  B versus T differential, one marker motif per lineage
+#   J  PCA of the Altius deviations, with the cell type R2
+#   K  Altius AP-1 and CEBP differentials across the cell type groups
 #####################################################################
 
 suppressPackageStartupMessages({
@@ -66,7 +67,7 @@ pca.show.r2 <- TRUE
 # Canvas. A4 squeezed the three column rows, so the figure is drawn larger
 # and scaled down at layout time instead
 fig.width <- 16
-fig.height <- 24
+fig.height <- 29
 base.size <- 10
 ellipse.level <- 0.9
 
@@ -492,6 +493,48 @@ p_i <- build_pca(pca.panelI, "I") +
   guides(colour = guide_legend(nrow = 4, byrow = TRUE))
 
 #####################################################################
+# Scree and cumulative variance of the distal deviation PCA
+#####################################################################
+
+scree_data <- function(mat, label, zscore = pca.zscore, n.pc = 10) {
+  mat <- clean_matrix(mat, label)
+  if (zscore) mat <- row_zscore(mat)
+  pca <- prcomp(t(mat), center = zscore || pca.center, scale. = pca.scale)
+  pct <- 100 * pca$sdev^2 / sum(pca$sdev^2)
+  k <- min(n.pc, length(pct))
+  log_info(label, ": variance of the first ", k, " PCs ",
+    paste(sprintf("%.1f", pct[seq_len(k)]), collapse = ", "))
+  data.frame(
+    pc = factor(seq_len(k)),
+    variance = pct[seq_len(k)],
+    cumulative = cumsum(pct)[seq_len(k)]
+  )
+}
+
+scree_bar <- function(df, title) {
+  ggplot(df, aes(x = pc, y = variance)) +
+    geom_col(fill = "grey70", width = 0.7) +
+    labs(title = title, x = "Principal component", y = "Explained variance (%)") +
+    theme_classic(base_size = base.size) +
+    theme(plot.title = element_text(hjust = 0, face = "plain", size = base.size))
+}
+
+variance_curve <- function(df, title) {
+  ggplot(df, aes(x = pc, y = cumulative, group = 1)) +
+    geom_line(colour = "#C2377C", linewidth = 0.5) +
+    geom_point(colour = "#C2377C", size = 1.4) +
+    labs(title = title, x = "Principal component", y = "Cumulative variance (%)") +
+    theme_classic(base_size = base.size) +
+    theme(plot.title = element_text(hjust = 0, face = "plain", size = base.size))
+}
+
+scree_df <- scree_data(
+  uncorrected_sets$distal[, samples_sets$distal, drop = FALSE], "scree_distal"
+)
+p_scree <- scree_bar(scree_df, paste0("Scree (", set_labels[["distal"]], ")"))
+p_variance <- variance_curve(scree_df, paste0("Cumulative variance (", set_labels[["distal"]], ")"))
+
+#####################################################################
 # C, motif variability
 #####################################################################
 
@@ -864,34 +907,38 @@ p_j <- Filter(Negate(is.null), lapply(altius.motifs, function(m) {
 #####################################################################
 
 if (length(p_e) == 0 || length(p_f) == 0 || length(p_j) == 0) {
-  stop("Panel G, H or J produced no footprint, the supplementary figure is not written")
+  stop("Panel H, I or K produced no footprint, the supplementary figure is not written")
 }
 
-p_e[[1]] <- p_e[[1]] + labs(tag = "G")
-p_f[[1]] <- p_f[[1]] + labs(tag = "H")
-p_j[[1]] <- p_j[[1]] + labs(tag = "J")
+p_e[[1]] <- p_e[[1]] + labs(tag = "H")
+p_f[[1]] <- p_f[[1]] + labs(tag = "I")
+p_j[[1]] <- p_j[[1]] + labs(tag = "K")
 
-# A and B carry the same key, so it is collected once and sits under the two
-# of them rather than beside the variability panel
+# The two deviation PCAs share one key and sit together as panel A, with the
+# scree and the cumulative variance of the distal PCA beside them
 row_ab <- wrap_plots(
-  p_a + labs(tag = "A"), p_b + labs(tag = "B"),
+  p_a + labs(tag = "A"), p_b,
   nrow = 1, guides = "collect"
 ) &
   theme(legend.position = "bottom") &
   guides(colour = guide_legend(nrow = 3, byrow = TRUE))
 
-row1 <- wrap_plots(row_ab, p_c + labs(tag = "C"),
-  wrap_plots(p_expected + labs(tag = "D"), p_expvar + labs(tag = "E"),
+row1 <- wrap_plots(row_ab, p_scree + labs(tag = "B"), p_variance + labs(tag = "C"),
+  nrow = 1, widths = c(2, 1, 1)
+)
+row2 <- wrap_plots(p_c + labs(tag = "D"),
+  wrap_plots(p_expected + labs(tag = "E"), p_expvar + labs(tag = "F"),
     ncol = 1, heights = c(2, 1)
   ),
-  nrow = 1, widths = c(2, 1, 1.15)
+  p_d + labs(tag = "G"),
+  nrow = 1, widths = c(1, 1.15, 1)
 )
-row2 <- wrap_plots(c(list(p_d + labs(tag = "F")), p_e), nrow = 1, widths = c(1, 1.2, 1.2))
-row3 <- wrap_plots(p_f, nrow = 1)
-row4 <- wrap_plots(c(list(p_i + labs(tag = "I")), p_j), nrow = 1, widths = c(1, 1.2, 1.2))
+row3 <- wrap_plots(p_e, nrow = 1)
+row4 <- wrap_plots(p_f, nrow = 1)
+row5 <- wrap_plots(c(list(p_i + labs(tag = "J")), p_j), nrow = 1, widths = c(1, 1.2, 1.2))
 
-supplementary <- wrap_plots(row1, row2, row3, row4,
-  ncol = 1, heights = c(1, 1.5, 1.15, 1.5)
+supplementary <- wrap_plots(row1, row2, row3, row4, row5,
+  ncol = 1, heights = c(1, 1.5, 1.15, 1.15, 1.5)
 ) &
   tag_theme
 
