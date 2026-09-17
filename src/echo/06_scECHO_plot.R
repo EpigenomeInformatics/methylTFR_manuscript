@@ -45,7 +45,7 @@ log_info("Rasterisation method: ", raster.method)
 #####################################################################
 
 # -- General --
-features <- c("POU2F2", "SPIB", "EOMES")
+features <- c("POU2F3", "SPIB", "EOMES")
 point.size <- 0.25
 raster.dpi <- 300
 github.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript"
@@ -54,7 +54,7 @@ if (!dir.exists(out.dir)) dir.create(out.dir, recursive = TRUE)
 
 # -- Methylation (scECHO) Settings --
 motifSet <- "jaspar2020_distal"
-dev.dir <- file.path("/scratch/icbb/igunduz/methylTFR_manuscript/echo", paste0("mTFR_sc_230826_", motifSet))
+dev.dir <- file.path("/scratch/icbb/igunduz/methylTFR_manuscript/echo", paste0("mTFR_sc_150926_", motifSet))
 lsi.file <- "/icbb/projects/igunduz/DARPA_analysis/artemis_031023/itLSI_res/itLSI_res_sub11kpc30.rds"
 cell.id.col <- "Cell_UID"
 pal.low <- "#5E3C99"; pal.mid <- "grey92"; pal.high <- "#E66101"
