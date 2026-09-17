@@ -83,6 +83,7 @@ heatmap.cell.types <- c(
 )
 column.order <- intersect(cell_type_levels, heatmap.cell.types)
 
+scatter.pairs <- NULL
 ellipse.min.samples <- 4
 ellipse.level <- 0.9
 
@@ -361,6 +362,54 @@ p_strip <- ggplot(factors_top, aes(x = factor, y = value, color = celltype)) +
 ggsave(file.path(plot.dir, "viper_factors_stripplot_by_celltype.pdf"),
   plot = p_strip & no_bg, width = 9, height = 5, bg = "transparent"
 )
+
+#####################################################################
+# C) Factor scatters
+#####################################################################
+
+factors_wide <- factors_long %>%
+  select(sample, factor, value, celltype) %>%
+  pivot_wider(names_from = factor, values_from = value) %>%
+  mutate(celltype = factor(celltype, levels = cell_type_levels)) %>%
+  as.data.frame()
+
+available <- setdiff(colnames(factors_wide), c("sample", "celltype"))
+pairs <- scatter.pairs
+if (is.null(pairs)) {
+  pairs <- list(top_factors[1:2], top_factors[3:4])
+  pairs <- Filter(function(p) all(!is.na(p)), pairs)
+}
+
+scatter_plot <- function(fx, fy) {
+  counts <- table(droplevels(factors_wide$celltype))
+  ell <- factors_wide[factors_wide$celltype %in%
+    names(counts)[counts >= ellipse.min.samples], , drop = FALSE]
+
+  ggplot(factors_wide, aes(x = .data[[fx]], y = .data[[fy]], colour = celltype)) +
+    geom_point(alpha = 0.9, size = 2) +
+    stat_ellipse(
+      data = ell, aes(group = celltype),
+      type = "norm", level = ellipse.level,
+      linetype = "dashed", linewidth = 0.4, show.legend = FALSE
+    ) +
+    scale_colour_manual(values = cell_type_colors, name = "Cell type", drop = TRUE) +
+    labs(x = fx, y = fy) +
+    theme_classic(base_size = 13)
+}
+
+scatter_panels <- list()
+for (pr in pairs) {
+  if (length(setdiff(pr, available)) > 0) {
+    log_warn("Skipping the scatter for ", paste(pr, collapse = " vs "),
+      ", not among the fitted factors")
+    next
+  }
+  p_scatter <- scatter_plot(pr[1], pr[2])
+  scatter_panels[[paste(pr, collapse = "_")]] <- p_scatter
+  file <- file.path(plot.dir, paste0("factor_scatter_", pr[1], "_", pr[2], ".pdf"))
+  ggsave(file, p_scatter & no_bg, width = 7, height = 5, bg = "transparent")
+  log_info("Wrote ", file)
+}
 
 #####################################################################
 # methyl-SELEX calls
@@ -790,37 +839,6 @@ dev.off()
 log_info("Wrote ", file)
 
 #####################################################################
-# C) mTFR / VIPER correlation by latent factor
-#####################################################################
-
-factor_cor <- cor_tab[cor_tab$top_factor %in% top_factors, ]
-factor_cor$top_factor <- factor(factor_cor$top_factor, levels = top_factors)
-factor_counts <- as.data.frame(table(factor_cor$top_factor), stringsAsFactors = FALSE)
-colnames(factor_counts) <- c("top_factor", "count")
-factor_pal <- setNames(hcl.colors(length(top_factors), "viridis"), top_factors)
-
-p_factor_cor <- ggplot(factor_cor, aes(x = top_factor, y = correlation, fill = top_factor)) +
-  geom_violin(colour = NA, alpha = 0.5, scale = "width", trim = FALSE) +
-  stat_boxplot(geom = "errorbar", width = 0.2, linewidth = 0.6) +
-  geom_boxplot(colour = "black", outlier.shape = NA, width = 0.25) +
-  geom_jitter(aes(colour = top_factor), width = 0.15, size = 1.1, alpha = 0.6) +
-  scale_fill_manual(values = factor_pal) +
-  scale_colour_manual(values = factor_pal) +
-  scale_y_continuous(breaks = seq(-1, 1, 0.2)) +
-  coord_cartesian(ylim = c(-1, 1.12), clip = "off") +
-  geom_text(
-    data = factor_counts, inherit.aes = FALSE,
-    aes(x = top_factor, y = 1.06, label = count), vjust = 0, size = 4.5
-  ) +
-  labs(x = "Latent factor", y = "mTFR / VIPER correlation") +
-  theme_classic(base_size = 13) +
-  theme(legend.position = "none", axis.title = element_text(face = "plain"))
-
-ggsave(file.path(plot.dir, "correlation_violin_by_factor_bp.pdf"),
-  p_factor_cor & no_bg, width = 6, height = 6, bg = "transparent")
-log_info("Wrote the per factor correlation violin")
-
-#####################################################################
 # The assembled figure
 #####################################################################
 
@@ -830,8 +848,13 @@ row_ab <- wrap_plots(
   nrow = 1, widths = c(1, 1.15)
 )
 
-row_cd <- list(p_factor_cor + labs(tag = "C"))
-cd_widths <- 1
+if (length(scatter_panels) == 0) {
+  stop("No factor scatter could be drawn, the assembled figure needs a scatter panel")
+}
+
+scatter_panels[[1]] <- scatter_panels[[1]] + labs(tag = "C")
+row_cd <- lapply(scatter_panels, function(p) p + theme(legend.position = "none"))
+cd_widths <- rep(1, length(row_cd))
 if (!is.null(p_selex)) {
   row_cd <- c(row_cd, list(p_selex + labs(tag = "D")))
   cd_widths <- c(cd_widths, 1)

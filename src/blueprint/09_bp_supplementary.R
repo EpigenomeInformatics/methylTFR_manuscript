@@ -193,9 +193,9 @@ altius_colors <- c(
 # motif standardisation removes, the other two are what only the correction
 # can take out, and the interaction is the larger of them
 var_source_colors <- c(
-  "Same in every sample" = "#B5A38A",
-  "Motif by sample" = "#C2377C",
-  "Whole sample shift" = "#E39BBE"
+  "Between motifs" = "#B5A38A",
+  "Motif x sample" = "#C2377C",
+  "Between samples" = "#E39BBE"
 )
 
 # Illustrator sees every opaque panel, plot and legend background as its own
