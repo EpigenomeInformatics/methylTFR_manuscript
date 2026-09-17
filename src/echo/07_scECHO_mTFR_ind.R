@@ -15,10 +15,10 @@ set.seed(42)
 #####################################################################
 # Config  (edit paths if needed)
 #####################################################################
-features   <- c("POU2F2", "SPIB", "EOMES")
+features   <- c("POU2F3", "SPIB", "EOMES")
 motifSet   <- "jaspar2020_distal"
 dev.dir    <- file.path("/scratch/icbb/igunduz/methylTFR_manuscript/echo",
-                        paste0("mTFR_sc_230826_", motifSet))
+                        paste0("mTFR_sc_150926_", motifSet))
 lsi.file   <- "/icbb/projects/igunduz/DARPA_analysis/artemis_031023/itLSI_res/itLSI_res_sub11kpc30.rds"
 cell.id.col <- "Cell_UID"
 
