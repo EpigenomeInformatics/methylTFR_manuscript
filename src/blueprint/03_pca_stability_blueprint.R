@@ -33,7 +33,7 @@ drop.cell.types <- c("Other", "Thymocyte")
 
 # Uncorrected control, kept out of the stability analysis by default
 add.uncorrected <- TRUE
-uncorrected.motifSet <- "jaspar2020"
+uncorrected.motifSet <- "jaspar2020_distal"
 uncorrected.in.stability <- FALSE
 
 # PCA is run on the raw matrices, without centring or scaling
@@ -54,7 +54,7 @@ rf.folds <- 5
 rf.seed <- 42
 
 # Cache the forests, set rf.recompute to force a refit
-rf.recompute <- FALSE
+rf.recompute <- TRUE
 # Representation whose motif matrix is used for the feature importance
 importance.rep <- "mTFR_jaspar2020_distal"
 importance.top <- 20
@@ -407,8 +407,8 @@ for (nm in names(dev.files)) {
   dev_obj <- readRDS(dev.files[[nm]])
   dev_mats[[nm]] <- deviations(dev_obj)
 
-  # Observed methylation, before the GC expectation is subtracted
-  if (add.uncorrected && nm == paste0("mTFR_", uncorrected.motifSet)) {
+  # Observed methylation, before the GC expectation is subtracted, for every set
+  if (add.uncorrected) {
     if (!"expected" %in% SummarizedExperiment::assayNames(dev_obj)) {
       log_warn(nm, ": no expected assay, the uncorrected representation is skipped")
     } else {
@@ -506,7 +506,7 @@ names(pcs) <- stability.reps
 # Cache the forests; recompute if missing, forced, or the importance format is stale
 rf_cache <- if (!rf.recompute && file.exists(rf.cache.file)) readRDS(rf.cache.file) else NULL
 cache_ok <- !is.null(rf_cache) &&
-  (is.null(rf_cache$importance) || "celltype" %in% names(rf_cache$importance))
+  (is.null(rf_cache$importance) \vert{}\vert{} "celltype" \%in\% names(rf_cache$importance))
 if (cache_ok) {
   log_info("Loading cached Random Forest results from ", rf.cache.file)
 } else {
@@ -556,7 +556,7 @@ write.csv(results_cv, file.path(table.dir, pc.tag_cv), row.names = FALSE)
 # Supplementary 1: A PCA and B scree share the top row, C confusion, D importance
 # Panel A: only the uncorrected and bias corrected JASPAR2020 PCAs
 pca.panel.reps <- c(
-  "mTFR_jaspar2020_uncorrected" = "Uncorrected (JASPAR2020)",
+  "mTFR_jaspar2020_distal_uncorrected" = "Uncorrected (JASPAR2020 distal)",
   "mTFR_jaspar2020" = "Bias corrected (JASPAR2020)"
 )
 pca.panel.reps <- pca.panel.reps[names(pca.panel.reps) %in% names(pca_list)]
@@ -606,4 +606,3 @@ ggsave(acc.figure.file, p_acc, width = 6, height = 4, bg = "white")
 log_info("Wrote ", acc.figure.file)
 
 log_success("Finished PCA and stability analysis")
-

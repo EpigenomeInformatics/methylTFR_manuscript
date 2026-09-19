@@ -574,6 +574,7 @@ if (!file.exists(h27cor.file)) {
   log_warn("No ", h27cor.file, ", the H3K27ac correlation panel is skipped. Run 11 first")
 } else {
   h27cor <- fread(h27cor.file)
+  h27cor <- h27cor[mark == "H3K27ac"]
   h27cor[, pioneer := vapply(motif, function(m) any(motif_tfs(m) %in% pioneer.tfs), logical(1))]
   h27cor_long <- rbind(
     data.table(modality = "methylTFR deviation", r = h27cor$r_mtfr, pioneer = h27cor$pioneer),
@@ -702,7 +703,7 @@ if (!file.exists(chip.A)) {
   p_cov <- ggplot(coverage, aes(x = cell, y = factor)) +
     geom_point(data = coverage[tested == FALSE], shape = 4, size = 1.3,
                colour = "grey78", stroke = 0.5) +
-    geom_point(data = coverage[tested == TRUE], aes(size = sites),
+    geom_point(data = coverage[tested == TRUE], size = 2.4,
                colour = ink.mark, alpha = 0.85) +
     geom_hline(yintercept = rule.y, linewidth = 0.3, colour = "grey70",
                linetype = "dotted") +
@@ -710,18 +711,14 @@ if (!file.exists(chip.A)) {
              label = sprintf("no ChIP-seq in any of these\ncell types (n = %d)",
                              length(none)),
              size = 2.3, colour = ink.muted) +
-    scale_size_continuous(range = c(1.4, 5.5), trans = "log10",
-                          breaks = c(300, 3000, 30000),
-                          labels = c("300", "3k", "30k")) +
     scale_x_discrete(position = "top") +
     labs(
-      x = NULL, y = "ChIP-seq target", size = "ChIP supported sites",
+      x = NULL, y = "ChIP-seq target",
       title = "Only one cell type carries more than two targets",
       subtitle = sprintf("%d of %d testable, %d only in GM12878",
                          length(priority.factors) - length(none),
                          length(priority.factors), length(only.line))
     ) +
-    guides(size = guide_legend(nrow = 1, title.position = "top")) +
     base_theme +
     theme(
       panel.grid.major.y = element_line(linewidth = 0.2, colour = "grey94"),
@@ -830,8 +827,8 @@ build_row <- function(items) {
 row_specs <- list(
   list(items = list(list(p_a, 1), list(p_b, 1.5)), height = 1),
   list(items = list(list(p_c, 1), list(p_d, 1), list(p_h27cor, 1.5)), height = 1.1),
-  list(items = list(list(p_h27, 1.2), list(p_cov, 0.9), list(p_spec, 1)), height = 1.3),
-  list(items = list(list(p_split, 1)), height = 1.2)
+  list(items = list(list(p_h27, 1.3), list(p_cov, 0.9), list(p_spec, 1), list(p_split, 1.4)),
+       height = 1.4)
 )
 
 rows <- list()
