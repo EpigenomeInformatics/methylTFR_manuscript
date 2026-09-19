@@ -560,41 +560,27 @@ if (!file.exists(prof.file)) {
 
 h27cor.file <- file.path(mixed.dir, "bp_chip_validation_correlations.csv")
 p_h27cor <- NULL
-# Documented pioneer factors, stratifying the H3K27ac correlation. Edit freely.
-pioneer.tfs <- c(
-  "FOXA1", "FOXA2", "FOXA3", "GATA1", "GATA2", "GATA3", "GATA4", "SPI1",
-  "CEBPA", "CEBPB", "CEBPD", "CEBPE", "KLF4", "SOX2", "POU5F1", "POU2F1",
-  "POU2F2", "ASCL1", "EBF1", "PAX5", "PAX7", "ESR1", "NR3C1", "TFAP2A",
-  "TFAP2C", "NEUROD1", "RUNX1"
-)
-motif_tfs <- function(m) {
-  toupper(trimws(unlist(strsplit(sub("\\(var\\.[0-9]+\\)", "", m), "::", fixed = TRUE))))
-}
 if (!file.exists(h27cor.file)) {
   log_warn("No ", h27cor.file, ", the H3K27ac correlation panel is skipped. Run 11 first")
 } else {
   h27cor <- fread(h27cor.file)
   h27cor <- h27cor[mark == "H3K27ac"]
-  h27cor[, pioneer := vapply(motif, function(m) any(motif_tfs(m) %in% pioneer.tfs), logical(1))]
   h27cor_long <- rbind(
-    data.table(modality = "methylTFR deviation", r = h27cor$r_mtfr, pioneer = h27cor$pioneer),
-    data.table(modality = "VIPER activity", r = h27cor$r_viper, pioneer = h27cor$pioneer)
+    data.table(modality = "methylTFR deviation", r = h27cor$r_mtfr),
+    data.table(modality = "VIPER activity", r = h27cor$r_viper)
   )
   h27cor_long <- h27cor_long[is.finite(r)]
   h27cor_long[, modality := factor(modality,
     levels = c("methylTFR deviation", "VIPER activity"))]
-  h27cor_long[, pioneer := factor(fifelse(pioneer, "Pioneer factors", "Other factors"),
-    levels = c("Pioneer factors", "Other factors"))]
 
   h27cor_lab <- h27cor_long[, .(
-    med = median(r), n = .N,
+    med = median(r),
     p = tryCatch(wilcox.test(r)$p.value, error = function(e) NA_real_)
-  ), by = .(pioneer, modality)]
+  ), by = modality]
   h27cor_lab[, padj := p.adjust(p, method = "BH")]
-  h27cor_lab[, label := sprintf("%.2f\np=%.3f", med, padj)]
+  h27cor_lab[, label := sprintf("median %.2f\np.adj = %.3f", med, padj)]
   log_info("H3K27ac correlation medians: ",
-    paste(h27cor_lab[, paste0(pioneer, " / ", modality, " ", round(med, 3), " (n=", n, ")")],
-      collapse = "; "))
+    paste(h27cor_lab[, paste0(modality, " ", round(med, 3))], collapse = "; "))
 
   h27cor.col <- c("methylTFR deviation" = "#ED4B4A", "VIPER activity" = "#6BC75A")
   p_h27cor <- ggplot(h27cor_long, aes(x = modality, y = r, fill = modality)) +
@@ -603,11 +589,10 @@ if (!file.exists(h27cor.file)) {
     geom_boxplot(colour = "black", outlier.shape = NA, width = 0.55) +
     geom_jitter(width = 0.2, size = 0.5, alpha = 0.5, colour = "grey30") +
     geom_text(data = h27cor_lab, aes(x = modality, y = 1.04, label = label),
-      inherit.aes = FALSE, vjust = 0, size = 2.4) +
-    facet_wrap(~pioneer) +
+      inherit.aes = FALSE, vjust = 0, size = 3) +
     scale_fill_manual(values = h27cor.col, guide = "none") +
     scale_x_discrete(labels = c("methylTFR", "VIPER")) +
-    coord_cartesian(ylim = c(-0.75, 1.3), clip = "off") +
+    coord_cartesian(ylim = c(-0.75, 1.25), clip = "off") +
     labs(x = NULL,
       y = "Pearson r with the H3K27ac signal, across samples within a motif",
       title = paste0("n = ", nrow(h27cor), " motifs")) +
