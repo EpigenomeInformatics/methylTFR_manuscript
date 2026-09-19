@@ -830,7 +830,8 @@ build_row <- function(items) {
 row_specs <- list(
   list(items = list(list(p_a, 1), list(p_b, 1.5)), height = 1),
   list(items = list(list(p_c, 1), list(p_d, 1), list(p_h27cor, 1.5)), height = 1.1),
-  list(items = list(list(p_h27, 1.2), list(p_cov, 0.9), list(p_spec, 1), list(p_split, 1)), height = 1.3)
+  list(items = list(list(p_h27, 1.2), list(p_cov, 0.9), list(p_spec, 1)), height = 1.3),
+  list(items = list(list(p_split, 1)), height = 1.2)
 )
 
 rows <- list()
