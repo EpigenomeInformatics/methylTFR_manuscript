@@ -9,13 +9,14 @@
 #      split by whether the factor is expressed at all
 #   C  Cell type variance carried by TF mRNA and by VIPER activity
 #   D  Agreement of each of the two with the methylTFR deviations
-#   E  H3K27ac at the distal motif sites, myeloid against lymphoid, with the
+#   E  Per motif correlation of the H3K27ac signal with methylTFR and with VIPER
+#   F  H3K27ac at the distal motif sites, myeloid against lymphoid, with the
 #      random distal positions drawn as the empirical baseline
-#   F  Which ChIP-seq target x cell type combinations have usable data at all
-#   G  TF ChIP site level split, summarised: every comparison scored against
+#   G  Which ChIP-seq target x cell type combinations have usable data at all
+#   H  The same two numbers against each other, against the diagonal
+#   I  TF ChIP site level split, summarised: every comparison scored against
 #      its own methylome and against a methylome from another lineage,
 #      the cell line kept apart from the primary cells
-#   H  The same two numbers against each other, against the diagonal
 #
 # The 28 comparisons one by one, and the motif level panel, are drawn in
 # 14_bp_tf_chip_figures.R as a second supplementary.
@@ -101,7 +102,7 @@ cell_type_colors <- c(
   "T-cells" = "#4FC3D9", "Thymocyte" = "#5B9BD5"
 )
 
-analysis.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/"
+analysis.dir <- "/icbb_triton/scratch/igunduz/methylTFR_manuscript/blueprint/"
 dev.tag <- "mTFR_devs_230826"
 mofa.dir <- file.path(analysis.dir, "mofa_230826")
 
@@ -109,7 +110,7 @@ counts.file <- file.path(mofa.dir, "bp_rawRNAcounts.RDS")
 viper.file <- file.path(mofa.dir, "bp_viper_activity.RDS")
 map.file <- file.path(mofa.dir, "bp_rna_wgbs_map.tsv")
 
-github.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/"
+github.dir <- "/icbb_triton/scratch/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/"
 fig.dir <- file.path(github.dir, "figures", "blueprint")
 mixed.dir <- file.path(github.dir, "tables", "mixed")
 if (!dir.exists(fig.dir)) dir.create(fig.dir, recursive = TRUE)
@@ -554,6 +555,66 @@ if (!file.exists(prof.file)) {
 }
 
 #####################################################################
+# Per motif correlation of the H3K27ac signal with each modality
+#####################################################################
+
+h27cor.file <- file.path(mixed.dir, "bp_chip_validation_correlations.csv")
+p_h27cor <- NULL
+# Documented pioneer factors, stratifying the H3K27ac correlation. Edit freely.
+pioneer.tfs <- c(
+  "FOXA1", "FOXA2", "FOXA3", "GATA1", "GATA2", "GATA3", "GATA4", "SPI1",
+  "CEBPA", "CEBPB", "CEBPD", "CEBPE", "KLF4", "SOX2", "POU5F1", "POU2F1",
+  "POU2F2", "ASCL1", "EBF1", "PAX5", "PAX7", "ESR1", "NR3C1", "TFAP2A",
+  "TFAP2C", "NEUROD1", "RUNX1"
+)
+motif_tfs <- function(m) {
+  toupper(trimws(unlist(strsplit(sub("\\(var\\.[0-9]+\\)", "", m), "::", fixed = TRUE))))
+}
+if (!file.exists(h27cor.file)) {
+  log_warn("No ", h27cor.file, ", the H3K27ac correlation panel is skipped. Run 11 first")
+} else {
+  h27cor <- fread(h27cor.file)
+  h27cor[, pioneer := vapply(motif, function(m) any(motif_tfs(m) %in% pioneer.tfs), logical(1))]
+  h27cor_long <- rbind(
+    data.table(modality = "methylTFR deviation", r = h27cor$r_mtfr, pioneer = h27cor$pioneer),
+    data.table(modality = "VIPER activity", r = h27cor$r_viper, pioneer = h27cor$pioneer)
+  )
+  h27cor_long <- h27cor_long[is.finite(r)]
+  h27cor_long[, modality := factor(modality,
+    levels = c("methylTFR deviation", "VIPER activity"))]
+  h27cor_long[, pioneer := factor(fifelse(pioneer, "Pioneer factors", "Other factors"),
+    levels = c("Pioneer factors", "Other factors"))]
+
+  h27cor_lab <- h27cor_long[, .(
+    med = median(r), n = .N,
+    p = tryCatch(wilcox.test(r)$p.value, error = function(e) NA_real_)
+  ), by = .(pioneer, modality)]
+  h27cor_lab[, padj := p.adjust(p, method = "BH")]
+  h27cor_lab[, label := sprintf("%.2f\np=%.3f", med, padj)]
+  log_info("H3K27ac correlation medians: ",
+    paste(h27cor_lab[, paste0(pioneer, " / ", modality, " ", round(med, 3), " (n=", n, ")")],
+      collapse = "; "))
+
+  h27cor.col <- c("methylTFR deviation" = "#ED4B4A", "VIPER activity" = "#6BC75A")
+  p_h27cor <- ggplot(h27cor_long, aes(x = modality, y = r, fill = modality)) +
+    geom_hline(yintercept = 0, linetype = "dashed", linewidth = 0.3, colour = "grey50") +
+    stat_boxplot(geom = "errorbar", width = 0.3, linewidth = 0.5) +
+    geom_boxplot(colour = "black", outlier.shape = NA, width = 0.55) +
+    geom_jitter(width = 0.2, size = 0.5, alpha = 0.5, colour = "grey30") +
+    geom_text(data = h27cor_lab, aes(x = modality, y = 1.04, label = label),
+      inherit.aes = FALSE, vjust = 0, size = 2.4) +
+    facet_wrap(~pioneer) +
+    scale_fill_manual(values = h27cor.col, guide = "none") +
+    scale_x_discrete(labels = c("methylTFR", "VIPER")) +
+    coord_cartesian(ylim = c(-0.75, 1.3), clip = "off") +
+    labs(x = NULL,
+      y = "Pearson r with the H3K27ac signal, across samples within a motif",
+      title = paste0("n = ", nrow(h27cor), " motifs")) +
+    base_theme +
+    theme(plot.title = element_text(hjust = 0, face = "plain", size = base.size))
+}
+
+#####################################################################
 # F to H) TF ChIP occupancy, only if 15 has been run
 #
 # Replaces the H3K27ac panels. A histone mark shows that the motif sites sit
@@ -768,9 +829,8 @@ build_row <- function(items) {
 
 row_specs <- list(
   list(items = list(list(p_a, 1), list(p_b, 1.5)), height = 1),
-  list(items = list(list(p_c, 1), list(p_d, 1), list(p_h27, 1.2)), height = 1.1),
-  list(items = list(list(p_cov, 0.9), list(p_split, 1.25), list(p_spec, 1)),
-       height = 1.5)
+  list(items = list(list(p_c, 1), list(p_d, 1), list(p_h27cor, 1.5)), height = 1.1),
+  list(items = list(list(p_h27, 1.2), list(p_cov, 0.9), list(p_spec, 1), list(p_split, 1)), height = 1.3)
 )
 
 rows <- list()

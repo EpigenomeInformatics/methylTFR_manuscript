@@ -11,6 +11,9 @@ dependencies:
   - r-biocmanager
   - r-data.table
   - r-ggplot2
+  - r-ggfortify
+  - r-randomforest
+  - r-patchwork
   - r-logger
   - r-matrixstats
   - r-r.utils

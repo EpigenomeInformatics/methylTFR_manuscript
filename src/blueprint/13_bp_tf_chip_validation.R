@@ -52,18 +52,18 @@ n.permutations <- 0L
 min.factors.for.B <- 6L
 b.peak.budget <- 20000L
 
-analysis.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/"
+analysis.dir <- "/icbb_triton/scratch/igunduz/methylTFR_manuscript/blueprint/"
 peaks.dir <- file.path(analysis.dir, "tf_chip_peaks")
 meth.dir <- file.path(analysis.dir, "tf_chip_methylomes")
 cache.dir <- file.path(analysis.dir, "tf_chip_validation")
 for (d in c(meth.dir, cache.dir)) if (!dir.exists(d)) dir.create(d, recursive = TRUE)
 
-github.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/"
+github.dir <- "/icbb_triton/scratch/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/"
 out.dir <- file.path(github.dir, "tables", "chip_validation")
 if (!dir.exists(out.dir)) dir.create(out.dir, recursive = TRUE)
 manifest.file <- file.path(out.dir, "chip_manifest.csv")
 
-distal.file <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFRAnnotationHg38_old/inst/extdata/distal_regions.RDS"
+distal.file <- "/icbb_triton/scratch/igunduz/methylTFR_manuscript/github/methylTFRAnnotationHg38_old/inst/extdata/distal_regions.RDS"
 
 options(timeout = 3600)
 
@@ -373,6 +373,35 @@ B_cor <- B[, if (.N >= min.factors.for.B) {
 fwrite(B, file.path(out.dir, "B_motif_level.csv"))
 fwrite(B_cor, file.path(out.dir, "B_motif_level_correlation.csv"))
 print(B_cor)
+
+#####################################################################
+# Collapsed to one point per TF family, so redundant AP-1 dimers and
+# motif variants count once rather than inflating the motif count
+#####################################################################
+
+ap1.genes <- c("FOS", "FOSB", "FOSL1", "FOSL2", "JUN", "JUNB", "JUND",
+               "BATF", "BATF3", "JDP2")
+family_key <- function(motif) {
+  tfs <- motif_to_tfs(motif)
+  if (any(tfs %in% ap1.genes)) {
+    return("AP-1")
+  }
+  paste(sort(unique(tfs)), collapse = "::")
+}
+B[, family := vapply(motif, family_key, character(1))]
+
+B_family <- B[, .(frac_supported = mean(frac_supported, na.rm = TRUE),
+                  deviation = mean(deviation, na.rm = TRUE), n_motifs = .N),
+              by = .(methylome, family)]
+
+B_cor_collapsed <- B_family[, if (.N >= min.factors.for.B) {
+  ct <- suppressWarnings(cor.test(frac_supported, deviation, method = "spearman"))
+  .(n_families = .N, rho = unname(ct$estimate), p = ct$p.value)
+} else .(n_families = .N, rho = NA_real_, p = NA_real_), by = methylome]
+
+fwrite(B_family, file.path(out.dir, "B_motif_level_collapsed.csv"))
+fwrite(B_cor_collapsed, file.path(out.dir, "B_motif_level_correlation_collapsed.csv"))
+print(B_cor_collapsed)
 
 #####################################################################
 
