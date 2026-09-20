@@ -36,8 +36,8 @@ add.uncorrected <- TRUE
 uncorrected.motifSet <- "jaspar2020_distal"
 uncorrected.in.stability <- FALSE
 
-# PCA is run on the raw matrices, without centring or scaling
-pca.center <- FALSE
+# PCA is centred so the PCs capture between-sample structure, not the mean level
+pca.center <- TRUE
 pca.scale <- FALSE
 
 # Number of PCs kept for the Random Forest, fixed rather than variance based
@@ -199,11 +199,8 @@ get_pc_matrix <- function(pca_obj, n_pcs) {
   t(pca_obj$x[, seq_len(n_pcs), drop = FALSE])
 }
 
-# Confusion matrix from pooled predictions, cells shaded by the row fraction
-# Variance explained by the first PCs, on a centred PCA so PC1 is not just
-# the mean methylation level that dominates the uncentred classifier PCA
-build_scree <- function(mat, title, n.pc = 10) {
-  pca <- prcomp(t(clean_matrix(mat, "scree")), center = pca.center, scale. = FALSE)
+# Scree of the shared PCA, so it matches the PCs handed to the Random Forest
+build_scree <- function(pca, title, n.pc = 10) {
   pct <- 100 * pca$sdev^2 / sum(pca$sdev^2)
   k <- min(n.pc, length(pct))
   df <- data.frame(pc = factor(seq_len(k)), variance = pct[seq_len(k)])
@@ -214,6 +211,7 @@ build_scree <- function(mat, title, n.pc = 10) {
     theme(plot.margin = ggplot2::margin(3, 3, 3, 3))
 }
 
+# Confusion matrix from pooled predictions, cells shaded by the row fraction
 build_confusion <- function(preds, title,
                             drop = if (exists("confusion.drop")) confusion.drop else character(0)) {
   present <- intersect(cell_type_levels, unique(as.character(preds$true)))
@@ -278,12 +276,10 @@ build_importance <- function(imp_df, title, top = importance.top) {
     theme(plot.margin = ggplot2::margin(3, 3, 3, 3))
 }
 
-# PCA scatter coloured by cell type, on a centred PCA so the axis variance
-# matches the scree panels
-build_pca_panel <- function(mat, groups, title) {
+# PCA scatter on the shared PCA, so the axes match the scree and the RF input
+build_pca_panel <- function(pca, groups, title) {
   present <- intersect(cell_type_levels, unique(groups))
   df <- data.frame(groups = factor(groups, levels = present))
-  pca <- prcomp(t(clean_matrix(mat, "pca")), center = pca.center, scale. = FALSE)
   autoplot(pca, data = df, colour = "groups", size = 1.4) +
     scale_color_manual(values = cell_type_colors[present], name = "Cell type") +
     labs(title = title) +
@@ -506,7 +502,7 @@ names(pcs) <- stability.reps
 # Cache the forests; recompute if missing, forced, or the importance format is stale
 rf_cache <- if (!rf.recompute && file.exists(rf.cache.file)) readRDS(rf.cache.file) else NULL
 cache_ok <- !is.null(rf_cache) &&
-  (is.null(rf_cache$importance) \vert{}\vert{} "celltype" \%in\% names(rf_cache$importance))
+  (is.null(rf_cache$importance) || "celltype" %in% names(rf_cache$importance))
 if (cache_ok) {
   log_info("Loading cached Random Forest results from ", rf.cache.file)
 } else {
@@ -561,13 +557,13 @@ pca.panel.reps <- c(
 )
 pca.panel.reps <- pca.panel.reps[names(pca.panel.reps) %in% names(pca_list)]
 pca_plots <- lapply(names(pca.panel.reps), function(nm)
-  build_pca_panel(mats[[nm]], cell_types, pca.panel.reps[[nm]]))
+  build_pca_panel(pca_list[[nm]], cell_types, pca.panel.reps[[nm]]))
 pca_plots[[1]] <- pca_plots[[1]] + labs(tag = "A")
 pca_grid <- wrap_plots(pca_plots, ncol = 2, guides = "collect")
 
 # Panel B: scree for every classified representation loaded this run
 show.reps <- intersect(names(cv_res), names(pca_list))
-scree_plots <- lapply(show.reps, function(nm) build_scree(mats[[nm]], nm))
+scree_plots <- lapply(show.reps, function(nm) build_scree(pca_list[[nm]], nm))
 scree_plots[[1]] <- scree_plots[[1]] + labs(tag = "B")
 scree_grid <- wrap_plots(scree_plots, ncol = 2)
 

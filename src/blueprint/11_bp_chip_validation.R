@@ -58,10 +58,10 @@ profile.random.n <- 500L
 # Ordered preference. The first available ones are taken, anything missing is
 # reported and the remaining slots fall back to the automatic pick
 profile.motifs <- c(
-  "FOSL2::JUNB", "SPIB", "CEBPB",
-  "MAFB", "MAF", "NR1H3::RXRA", "SPI1"
+  "CEBPB", "SPI1", "JUNB", "RELA",
+  "FOSL2::JUNB", "SPIB", "MAFB", "MAF", "NR1H3::RXRA"
 )
-profile.motifs.n <- 3L
+profile.motifs.n <- 4L
 
 min.samples.per.celltype <- 5L
 drop.cell.types <- c("other", "thymocyte")
@@ -407,20 +407,21 @@ auto_examples <- function(n, exclude = character(0)) {
   ranked[keep]
 }
 
+# The footprint needs only binding sites, so a requested motif is shown even
+# without a paired ChIP/mRNA/VIPER correlation; its sites must overlap the distal set
+has_distal_sites <- function(m) {
+  m %in% names(tf_bindsites) && length(subsetByOverlaps(tf_bindsites[[m]], enhancer)) > 0
+}
+example_row <- function(m) if (m %in% primary$motif) primary[match(m, primary$motif)] else data.table(motif = m)
+
 examples <- primary[0]
 if (!is.null(profile.motifs)) {
-  hit <- profile.motifs[profile.motifs %in% primary$motif]
-  miss <- setdiff(profile.motifs, primary$motif)
-  if (length(miss) > 0) {
-    log_warn(
-      "Not available as a paired motif with ChIP, mRNA and VIPER: ",
-      paste(miss, collapse = ", ")
-    )
-  }
-  examples <- primary[match(head(hit, profile.motifs.n), primary$motif)]
-}
-if (nrow(examples) < profile.motifs.n) {
-  examples <- rbind(examples, auto_examples(profile.motifs.n - nrow(examples), examples$motif))
+  ok <- profile.motifs[vapply(profile.motifs, has_distal_sites, logical(1))]
+  miss <- setdiff(profile.motifs, ok)
+  if (length(miss) > 0) log_warn("No distal binding sites, skipped as a profile motif: ", paste(miss, collapse = ", "))
+  examples <- rbindlist(lapply(head(ok, profile.motifs.n), example_row), fill = TRUE)
+} else {
+  examples <- auto_examples(profile.motifs.n)
 }
 if (nrow(examples) == 0) stop("No example motif could be chosen")
 log_info("Example motifs: ", paste(examples$motif, collapse = ", "))
