@@ -7,8 +7,8 @@
 #   - figure_echo_integration: the modality contribution, the factor
 #     strip plot and the paired methylTFR / chromVAR heatmap
 #   - sup_figure_echo_integration: the correlation boxplot by methyl-SELEX
-#     call, the sample wise agreement of the two modalities and the per TF
-#     scatters
+#     call, the sample wise agreement of the two modalities and the
+#     correlation distribution by cell type, faceted by latent factor
 #
 # Nothing here retrains MOFA, it reads the model and the tables 01 wrote.
 #####################################################################
@@ -694,6 +694,62 @@ if (length(available_tfs) > 0) {
 }
 
 #####################################################################
+# mTFR / chromVAR correlation by cell type, faceted by latent factor
+#####################################################################
+
+# Correlation within each cell type, so a cell type needs enough samples
+min.corr.samples <- 3
+
+tf_top_factor <- ft %>%
+  group_by(feature) %>%
+  slice_max(abs(value), n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  select(feature, factor) %>%
+  as.data.frame()
+factor_of <- setNames(tf_top_factor$factor, tf_top_factor$feature)
+
+ct_levels <- intersect(names(cell_type_colors), unique(cell_types))
+factor_cor <- do.call(rbind, lapply(ct_levels, function(ct) {
+  cols <- which(cell_types == ct)
+  if (length(cols) < min.corr.samples) {
+    log_warn(ct, ": ", length(cols), " samples, no per cell type correlation")
+    return(NULL)
+  }
+  vals <- vapply(common_tfs, function(tf) {
+    suppressWarnings(cor(
+      as.numeric(mtfr[tf, cols]), as.numeric(chromVar[tf, cols]),
+      method = "pearson", use = "complete.obs"
+    ))
+  }, numeric(1))
+  data.frame(tf = common_tfs, correlation = unname(vals),
+    celltype = ct, stringsAsFactors = FALSE)
+}))
+
+factor_cor$factor <- factor_of[factor_cor$tf]
+factor_cor <- factor_cor[!is.na(factor_cor$factor) & is.finite(factor_cor$correlation), ]
+factor_cor$factor <- droplevels(factor(factor_cor$factor, levels = heat_factors))
+factor_cor$celltype <- factor(factor_cor$celltype, levels = ct_levels)
+
+p_factor_cor <- ggplot(factor_cor, aes(x = celltype, y = correlation, fill = celltype)) +
+  stat_boxplot(geom = "errorbar", width = 0.3, linewidth = 0.5) +
+  geom_boxplot(colour = "black", outlier.shape = NA, width = 0.6) +
+  scale_fill_manual(values = cell_type_colors) +
+  scale_y_continuous(breaks = seq(-1, 1, 0.5)) +
+  coord_cartesian(ylim = c(-1, 1)) +
+  facet_wrap(~factor) +
+  labs(x = "Cell type", y = "mTFR / chromVAR correlation") +
+  theme_classic(base_size = 13) +
+  theme(
+    legend.position = "none",
+    axis.title = element_text(face = "plain"),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+ggsave(file.path(plot.dir, "correlation_boxplot_by_celltype_factor.pdf"),
+  p_factor_cor & no_bg, width = 9, height = 7, bg = "transparent")
+log_info("Wrote the per cell type correlation boxplots by latent factor")
+
+#####################################################################
 # Sample wise agreement of the two modalities, by cell type
 #####################################################################
 
@@ -892,8 +948,8 @@ if (is.null(p_modality) || is.null(p_strip)) {
 # The supplementary figure: SELEX, sample agreement, per TF scatters
 #####################################################################
 
-if (is.null(p_selex) || is.null(p_scatter)) {
-  log_warn("The SELEX panel or the scatters are missing, the supplementary figure is skipped")
+if (is.null(p_selex) || is.null(p_factor_cor)) {
+  log_warn("The SELEX panel or the per factor panel is missing, the supplementary figure is skipped")
 } else {
   sup <- wrap_plots(
     wrap_plots(
@@ -901,13 +957,13 @@ if (is.null(p_selex) || is.null(p_scatter)) {
       p_sample_cor + labs(tag = "B"),
       nrow = 1, widths = c(1, 1.2)
     ),
-    wrap_elements(full = patchwork::patchworkGrob(p_scatter)) + labs(tag = "C"),
-    ncol = 1, heights = c(1, 0.95 * ceiling(length(available_tfs) / 2))
+    p_factor_cor + labs(tag = "C"),
+    ncol = 1, heights = c(1, 1.6)
   ) & tag_theme
 
   file <- file.path(plot.dir, "sup_figure_echo_integration.pdf")
   ggsave(file, sup & no_bg,
-    width = 14, height = 6 + 4.4 * ceiling(length(available_tfs) / 2),
+    width = 12, height = 15,
     bg = "transparent", limitsize = FALSE
   )
   log_info("Wrote ", file)

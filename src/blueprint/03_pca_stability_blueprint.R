@@ -15,6 +15,7 @@ suppressPackageStartupMessages({
   library(ggfortify)
   library(logger)
   library(randomForest)
+  library(patchwork)
   library(RnBeads)
   library(methylTFR)
 })
@@ -27,31 +28,23 @@ set.seed(42)
 # Motif sets whose deviations enter the PCA and the stability analysis
 motifSets <- c("jaspar2020", "jaspar2020_distal")
 
-# Cell type groups excluded from the PCA and the stability analysis.
-# "Other" collects samples with no assigned cell type, matching 08_bp_mofa.R
-drop.cell.types <- "Other"
+# Cell type groups excluded from the PCA and the stability analysis
+drop.cell.types <- c("Other", "Thymocyte")
 
-# Uncorrected control. The deviations assay holds observed minus expected
-# methylation, so adding the expected assay back recovers the observed
-# methylation before the GC correction. Kept out of the stability analysis
-# by default, so the accuracy table stays comparable across runs.
+# Uncorrected control, kept out of the stability analysis by default
 add.uncorrected <- TRUE
-uncorrected.motifSet <- "jaspar2020"
+uncorrected.motifSet <- "jaspar2020_distal"
 uncorrected.in.stability <- FALSE
 
-# PCA is run on the raw matrices, without centring or scaling
-pca.center <- FALSE
+# PCA is centred so the PCs capture between-sample structure, not the mean level
+pca.center <- TRUE
 pca.scale <- FALSE
 
-# Number of PCs kept for the Random Forest.
-# On uncentred matrices the first component is the mean methylation profile
-# and absorbs almost all of the total sum of squares, so a cumulative
-# variance rule always collapses to a single component that carries no cell
-# type information. A fixed number of components is used instead.
+# Number of PCs kept for the Random Forest, fixed rather than variance based
 pc.selection <- "fixed" # "fixed" or "variance"
 n.pc <- 20 # Components kept when pc.selection is "fixed"
 var.threshold <- 0.9 # Cumulative variance when pc.selection is "variance"
-max.pc <- 20 # Cap for the number of PCs
+max.pc <- 10 # Cap for the number of PCs
 
 # Random Forest settings
 rf.ntree <- 500
@@ -60,8 +53,16 @@ rf.test.frac <- 0.2
 rf.folds <- 5
 rf.seed <- 42
 
+# Cache the forests, set rf.recompute to force a refit
+rf.recompute <- TRUE
+# Representation whose motif matrix is used for the feature importance
+importance.rep <- "mTFR_jaspar2020_distal"
+importance.top <- 20
+# Cell types left out of the confusion matrices
+confusion.drop <- character(0)
+
 # Directories
-analysis.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/blueprint/"
+analysis.dir <- "/icbb_triton/scratch/igunduz/methylTFR_manuscript/blueprint/"
 rnb.tag <- "RnBeads_230826"
 dev.tag <- "mTFR_devs_230826"
 rnb.set.path <- file.path(analysis.dir, rnb.tag, "reports", "data_import_data", "rnb.set_preprocessed")
@@ -71,7 +72,7 @@ dev.files <- setNames(
   paste0("mTFR_", motifSets)
 )
 
-github.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/"
+github.dir <- "/icbb_triton/scratch/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/"
 fig.dir <- file.path(github.dir, "figures", "blueprint")
 table.dir <- file.path(github.dir, "tables")
 if (!dir.exists(fig.dir)) dir.create(fig.dir, recursive = TRUE)
@@ -82,8 +83,13 @@ pc.tag <- if (pc.selection == "fixed") paste0(n.pc, "pc") else paste0("var", 100
 pc.tag_splits <- paste0("rf_classification_accuracy_pc_stratified_splits_", pc.tag, ".csv")
 pc.tag_cv <- paste0("rf_classification_accuracy_pc_5foldcv_", pc.tag, ".csv")
 
-# Display names and palette, identical to 06_differential_heatmap.R so that
-# every Blueprint panel uses the same colour per cell type
+cache.dir <- file.path(analysis.dir, "debug")
+if (!dir.exists(cache.dir)) dir.create(cache.dir, recursive = TRUE)
+rf.cache.file <- file.path(cache.dir, paste0(
+  "rf_stability_", pc.tag, "_", rf.repeats, "splits_", rf.folds, "fold.rds"
+))
+
+# Display names and palette, identical to 06_differential_heatmap.R
 group_remap <- c(
   "Bcell" = "B-cells",
   "DC" = "Dendritic cells",
@@ -193,6 +199,108 @@ get_pc_matrix <- function(pca_obj, n_pcs) {
   t(pca_obj$x[, seq_len(n_pcs), drop = FALSE])
 }
 
+# Scree of the shared PCA, so it matches the PCs handed to the Random Forest
+build_scree <- function(pca, title, n.pc = 10) {
+  pct <- 100 * pca$sdev^2 / sum(pca$sdev^2)
+  k <- min(n.pc, length(pct))
+  df <- data.frame(pc = factor(seq_len(k)), variance = pct[seq_len(k)])
+  ggplot(df, aes(x = pc, y = variance)) +
+    geom_col(fill = "#7B1E3D", width = 0.7) +
+    labs(title = title, x = "PC", y = "Variance explained (%)") +
+    theme_classic(base_size = 9) +
+    theme(plot.margin = ggplot2::margin(3, 3, 3, 3))
+}
+
+# Confusion matrix from pooled predictions, cells shaded by the row fraction
+build_confusion <- function(preds, title,
+                            drop = if (exists("confusion.drop")) confusion.drop else character(0)) {
+  present <- intersect(cell_type_levels, unique(as.character(preds$true)))
+  present <- setdiff(present, drop)
+  cm <- as.data.frame(table(
+    True = factor(preds$true, levels = present),
+    Predicted = factor(preds$pred, levels = present)
+  ))
+  totals <- tapply(cm$Freq, cm$True, sum)
+  cm$frac <- cm$Freq / totals[as.character(cm$True)]
+  cm$frac[!is.finite(cm$frac)] <- 0
+
+  ggplot(cm, aes(x = Predicted, y = True, fill = frac)) +
+    geom_tile(colour = "grey85") +
+    geom_text(aes(label = sprintf("%.2f", frac), colour = frac > 0.5), size = 2.4) +
+    scale_fill_gradient(low = "white", high = "#2B4B9B", limits = c(0, 1),
+      name = "Row fraction") +
+    scale_colour_manual(values = c(`TRUE` = "white", `FALSE` = "grey20"), guide = "none") +
+    scale_x_discrete(limits = present, expand = c(0, 0)) +
+    scale_y_discrete(limits = rev(present), expand = c(0, 0)) +
+    labs(title = title, x = "Predicted", y = "True") +
+    theme_classic(base_size = 9) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+      panel.grid = element_blank(), plot.margin = ggplot2::margin(3, 3, 3, 3))
+}
+
+# Per cell type permutation importance from a forest on the motif matrix
+rf_importance <- function(mat, labels, ntree = rf.ntree, seed = rf.seed) {
+  x <- t(clean_matrix(mat, "importance"))
+  labels <- factor(labels)
+  set.seed(seed)
+  rf <- randomForest(x, labels, ntree = ntree, importance = TRUE)
+  imp <- importance(rf)
+  class_cols <- intersect(levels(labels), colnames(imp))
+  imp <- imp[, class_cols, drop = FALSE]
+  data.frame(
+    motif = rep(rownames(imp), times = ncol(imp)),
+    celltype = rep(colnames(imp), each = nrow(imp)),
+    importance = as.numeric(imp),
+    row.names = NULL
+  )
+}
+
+# Top predictors per cell type, one facet each
+build_importance <- function(imp_df, title, top = importance.top) {
+  present <- intersect(cell_type_levels, unique(imp_df$celltype))
+  top_df <- imp_df %>%
+    group_by(celltype) %>%
+    slice_max(importance, n = top, with_ties = FALSE) %>%
+    ungroup() %>%
+    as.data.frame()
+  top_df$celltype <- factor(top_df$celltype, levels = present)
+  top_df$key <- reorder(interaction(top_df$motif, top_df$celltype, sep = "@@"), top_df$importance)
+  ggplot(top_df, aes(x = importance, y = key, fill = celltype)) +
+    geom_col(width = 0.7) +
+    facet_wrap(~celltype, scales = "free_y") +
+    scale_fill_manual(values = cell_type_colors, guide = "none") +
+    scale_x_continuous(expand = expansion(mult = c(0, 0.05))) +
+    scale_y_discrete(labels = function(x) sub("@@.*$", "", x)) +
+    labs(title = title, x = "Mean decrease in accuracy", y = NULL) +
+    theme_classic(base_size = 9) +
+    theme(plot.margin = ggplot2::margin(3, 3, 3, 3))
+}
+
+# PCA scatter on the shared PCA, so the axes match the scree and the RF input
+build_pca_panel <- function(pca, groups, title) {
+  present <- intersect(cell_type_levels, unique(groups))
+  df <- data.frame(groups = factor(groups, levels = present))
+  autoplot(pca, data = df, colour = "groups", size = 1.4) +
+    scale_color_manual(values = cell_type_colors[present], name = "Cell type") +
+    labs(title = title) +
+    theme_classic(base_size = 9) +
+    theme(plot.margin = ggplot2::margin(3, 3, 3, 3))
+}
+
+# Random Forest classification accuracy across representations
+build_accuracy <- function(res, title) {
+  res <- res[order(res$Accuracy), ]
+  res$Representation <- factor(res$Representation, levels = res$Representation)
+  ggplot(res, aes(x = Accuracy, y = Representation)) +
+    geom_col(fill = "#4FC3D9", width = 0.7) +
+    geom_errorbarh(aes(xmin = Accuracy - SD, xmax = Accuracy + SD), height = 0.25) +
+    geom_text(aes(label = sprintf("%.2f", Accuracy)), hjust = -0.25, size = 3) +
+    coord_cartesian(xlim = c(0, 1.08)) +
+    labs(title = title, x = "Classification accuracy", y = NULL) +
+    theme_classic(base_size = 9) +
+    theme(plot.margin = ggplot2::margin(3, 3, 3, 3))
+}
+
 # Repeated stratified hold out, singleton classes stay in the training set
 cv_rf_stratified_splits <- function(mat, labels, repeats = 10, test_frac = 0.2, ntree = 500, seed = 13) {
   stopifnot(ncol(mat) == length(labels))
@@ -207,6 +315,7 @@ cv_rf_stratified_splits <- function(mat, labels, repeats = 10, test_frac = 0.2, 
   }
 
   accs <- numeric(repeats)
+  preds_list <- vector("list", repeats)
   x <- t(mat)
 
   for (r in seq_len(repeats)) {
@@ -222,8 +331,12 @@ cv_rf_stratified_splits <- function(mat, labels, repeats = 10, test_frac = 0.2, 
     rf <- randomForest(x[train_idx, , drop = FALSE], labels[train_idx], ntree = ntree)
     pred <- predict(rf, x[test_idx, , drop = FALSE])
     accs[r] <- mean(pred == labels[test_idx])
+    preds_list[[r]] <- data.frame(true = labels[test_idx], pred = pred)
   }
-  c(mean = mean(accs, na.rm = TRUE), sd = sd(accs, na.rm = TRUE))
+  list(
+    mean = mean(accs, na.rm = TRUE), sd = sd(accs, na.rm = TRUE),
+    preds = do.call(rbind, preds_list)
+  )
 }
 
 # Stratified k fold cross validation, classes with a single sample are dropped
@@ -258,6 +371,7 @@ cv_rf_accuracy_safe <- function(mat, labels, k = 5, ntree = 500, seed = 13) {
   }
 
   acc <- numeric(k_use)
+  preds_list <- vector("list", k_use)
   x <- t(mat2)
   for (i in seq_len(k_use)) {
     test_idx <- which(folds == i)
@@ -265,8 +379,9 @@ cv_rf_accuracy_safe <- function(mat, labels, k = 5, ntree = 500, seed = 13) {
     rf <- randomForest(x[train_idx, , drop = FALSE], labels2[train_idx], ntree = ntree)
     pred <- predict(rf, x[test_idx, , drop = FALSE])
     acc[i] <- mean(pred == labels2[test_idx])
+    preds_list[[i]] <- data.frame(true = labels2[test_idx], pred = pred)
   }
-  c(mean = mean(acc), sd = sd(acc))
+  list(mean = mean(acc), sd = sd(acc), preds = do.call(rbind, preds_list))
 }
 
 #####################################################################
@@ -288,8 +403,8 @@ for (nm in names(dev.files)) {
   dev_obj <- readRDS(dev.files[[nm]])
   dev_mats[[nm]] <- deviations(dev_obj)
 
-  # Observed methylation, before the GC expectation is subtracted
-  if (add.uncorrected && nm == paste0("mTFR_", uncorrected.motifSet)) {
+  # Observed methylation, before the GC expectation is subtracted, for every set
+  if (add.uncorrected) {
     if (!"expected" %in% SummarizedExperiment::assayNames(dev_obj)) {
       log_warn(nm, ": no expected assay, the uncorrected representation is skipped")
     } else {
@@ -304,8 +419,7 @@ if (length(dev_mats) == 0) {
   stop("None of the deviation files were found, run 02 first")
 }
 
-# RnBeads object, disease samples are removed here so that all
-# representations are built from the same set of samples
+# RnBeads object, disease samples removed so all representations share samples
 log_info("Loading RnBeads object from ", rnb.set.path)
 rnbeads <- load.rnb.set(rnb.set.path)
 disease_idx <- which(as.character(pheno(rnbeads)$DISEASE) != "None")
@@ -313,7 +427,6 @@ if (length(disease_idx) > 0) {
   log_info("Removing ", length(disease_idx), " disease samples from the RnBeads object")
   rnbeads <- remove.samples(rnbeads, disease_idx)
 }
-
 distal <- meth(rnbeads, type = "distal")
 tiling <- meth(rnbeads, type = "tiling1kb")
 
@@ -328,8 +441,7 @@ mats <- c(dev_mats, list(Distal = distal, Tiling1kb = tiling))
 ann_ok <- !is.na(sannot$DISEASE) & sannot$DISEASE == "None" &
   sannot$cellTypeGroup %in% names(group_remap)
 
-# Groups that are not a defined cell type are excluded from both the PCA and
-# the classifier, so the accuracy is over labelled cell types only
+# Non cell type groups excluded from the PCA and the classifier
 if (length(drop.cell.types) > 0) {
   mapped <- unname(group_remap[sannot$cellTypeGroup])
   drop_idx <- which(ann_ok & mapped %in% drop.cell.types)
@@ -387,47 +499,106 @@ n_pcs <- vapply(stability.reps, function(nm) select_pcs(pca_list[[nm]], nm), int
 pcs <- lapply(stability.reps, function(nm) get_pc_matrix(pca_list[[nm]], n_pcs[[nm]]))
 names(pcs) <- stability.reps
 
-# Repeated stratified hold out splits
-log_info("Random Forest with ", rf.repeats, " stratified splits")
-acc_splits <- vapply(pcs, function(m) {
-  cv_rf_stratified_splits(m, cell_types,
-    repeats = rf.repeats, test_frac = rf.test.frac,
-    ntree = rf.ntree, seed = rf.seed
-  )
-}, numeric(2))
+# Cache the forests; recompute if missing, forced, or the importance format is stale
+rf_cache <- if (!rf.recompute && file.exists(rf.cache.file)) readRDS(rf.cache.file) else NULL
+cache_ok <- !is.null(rf_cache) &&
+  (is.null(rf_cache$importance) || "celltype" %in% names(rf_cache$importance))
+if (cache_ok) {
+  log_info("Loading cached Random Forest results from ", rf.cache.file)
+} else {
+  log_info("Random Forest with ", rf.repeats, " stratified splits")
+  split_res <- lapply(pcs, function(m) {
+    cv_rf_stratified_splits(m, cell_types,
+      repeats = rf.repeats, test_frac = rf.test.frac, ntree = rf.ntree, seed = rf.seed
+    )
+  })
+  log_info("Random Forest with ", rf.folds, " fold cross validation")
+  cv_res <- lapply(pcs, function(m) {
+    cv_rf_accuracy_safe(m, cell_types, k = rf.folds, ntree = rf.ntree, seed = rf.seed)
+  })
+  importance_df <- if (importance.rep %in% names(mats)) {
+    log_info("Random Forest importance on ", importance.rep)
+    rf_importance(mats[[importance.rep]], cell_types)
+  } else {
+    log_warn(importance.rep, " is not among the representations, skipping importance")
+    NULL
+  }
+  rf_cache <- list(split_res = split_res, cv_res = cv_res, importance = importance_df)
+  saveRDS(rf_cache, rf.cache.file)
+  log_info("Cached Random Forest results to ", rf.cache.file)
+}
+split_res <- rf_cache$split_res
+cv_res <- rf_cache$cv_res
+importance_df <- rf_cache$importance
 
 results_splits <- data.frame(
-  Representation = names(pcs),
-  Accuracy = unname(acc_splits["mean", ]),
-  SD = unname(acc_splits["sd", ]),
-  NumPCs = as.integer(n_pcs),
+  Representation = names(split_res),
+  Accuracy = vapply(split_res, function(x) x$mean, numeric(1)),
+  SD = vapply(split_res, function(x) x$sd, numeric(1)),
+  NumPCs = as.integer(n_pcs[names(split_res)]),
   row.names = NULL
 )
-write.csv(results_splits,
-  file = file.path(table.dir, pc.tag_splits),
-  row.names = FALSE
-)
-
-# k fold cross validation
-log_info("Random Forest with ", rf.folds, " fold cross validation")
-acc_cv <- vapply(pcs, function(m) {
-  cv_rf_accuracy_safe(m, cell_types,
-    k = rf.folds, ntree = rf.ntree, seed = rf.seed
-  )
-}, numeric(2))
+write.csv(results_splits, file.path(table.dir, pc.tag_splits), row.names = FALSE)
 
 results_cv <- data.frame(
-  Representation = names(pcs),
-  Accuracy = unname(acc_cv["mean", ]),
-  SD = unname(acc_cv["sd", ]),
-  NumPCs = as.integer(n_pcs),
+  Representation = names(cv_res),
+  Accuracy = vapply(cv_res, function(x) x$mean, numeric(1)),
+  SD = vapply(cv_res, function(x) x$sd, numeric(1)),
+  NumPCs = as.integer(n_pcs[names(cv_res)]),
   row.names = NULL
 )
-write.csv(results_cv,
-  file = file.path(table.dir, pc.tag_cv),
-  row.names = FALSE
+write.csv(results_cv, file.path(table.dir, pc.tag_cv), row.names = FALSE)
+
+# Supplementary 1: A PCA and B scree share the top row, C confusion, D importance
+# Panel A: only the uncorrected and bias corrected JASPAR2020 PCAs
+pca.panel.reps <- c(
+  "mTFR_jaspar2020_distal_uncorrected" = "Uncorrected (JASPAR2020 distal)",
+  "mTFR_jaspar2020" = "Bias corrected (JASPAR2020)"
 )
+pca.panel.reps <- pca.panel.reps[names(pca.panel.reps) %in% names(pca_list)]
+pca_plots <- lapply(names(pca.panel.reps), function(nm)
+  build_pca_panel(pca_list[[nm]], cell_types, pca.panel.reps[[nm]]))
+pca_plots[[1]] <- pca_plots[[1]] + labs(tag = "A")
+pca_grid <- wrap_plots(pca_plots, ncol = 2, guides = "collect")
+
+# Panel B: scree for every classified representation loaded this run
+show.reps <- intersect(names(cv_res), names(pca_list))
+scree_plots <- lapply(show.reps, function(nm) build_scree(pca_list[[nm]], nm))
+scree_plots[[1]] <- scree_plots[[1]] + labs(tag = "B")
+scree_grid <- wrap_plots(scree_plots, ncol = 2)
+
+conf_plots <- lapply(names(cv_res), function(nm) build_confusion(cv_res[[nm]]$preds, nm))
+conf_plots[[1]] <- conf_plots[[1]] + labs(tag = "C")
+conf_grid <- wrap_plots(conf_plots, ncol = 2, guides = "collect")
+
+row_ab <- wrap_plots(pca_grid, scree_grid, ncol = 2)
+
+panels <- list(row_ab, conf_grid)
+heights <- c(1, 1.1)
+if (!is.null(importance_df)) {
+  write.csv(importance_df,
+    file.path(table.dir, paste0("rf_importance_", importance.rep, ".csv")),
+    row.names = FALSE
+  )
+  imp_panel <- build_importance(
+    importance_df, paste0("Top ", importance.top, " methylTFR predictors per cell type")
+  ) + labs(tag = "D")
+  panels <- c(panels, list(imp_panel))
+  heights <- c(1, 1.1, 1.5)
+}
+
+combined <- wrap_plots(panels, ncol = 1, heights = heights) &
+  theme(plot.margin = ggplot2::margin(3, 3, 3, 3),
+    plot.tag = element_text(face = "bold", size = 14))
+
+rf.figure.file <- file.path(fig.dir, paste0("blueprint_supplementary1_", pc.tag, ".pdf"))
+ggsave(rf.figure.file, combined, width = 14, height = 20, bg = "white")
+log_info("Wrote ", rf.figure.file)
+
+# RF classification accuracy, saved on its own for the main figure
+p_acc <- build_accuracy(results_splits, "RF classification accuracy")
+acc.figure.file <- file.path(fig.dir, paste0("rf_accuracy_", pc.tag, ".pdf"))
+ggsave(acc.figure.file, p_acc, width = 6, height = 4, bg = "white")
+log_info("Wrote ", acc.figure.file)
 
 log_success("Finished PCA and stability analysis")
-print(results_splits)
-print(results_cv)

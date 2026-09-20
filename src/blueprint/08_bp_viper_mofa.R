@@ -842,15 +842,15 @@ log_info("Wrote ", file)
 # The assembled figure
 #####################################################################
 
-if (length(scatter_panels) == 0) {
-  stop("No factor scatter could be drawn, the assembled figure needs a scatter panel")
-}
-
 row_ab <- wrap_plots(
   p_modality_frac + labs(tag = "A"),
   p_strip + labs(tag = "B"),
   nrow = 1, widths = c(1, 1.15)
 )
+
+if (length(scatter_panels) == 0) {
+  stop("No factor scatter could be drawn, the assembled figure needs a scatter panel")
+}
 
 scatter_panels[[1]] <- scatter_panels[[1]] + labs(tag = "C")
 row_cd <- lapply(scatter_panels, function(p) p + theme(legend.position = "none"))

@@ -1,4 +1,4 @@
-name: methyltfr_triton
+name: methyltfr
 channels:
   - conda-forge
   - bioconda
@@ -11,6 +11,9 @@ dependencies:
   - r-biocmanager
   - r-data.table
   - r-ggplot2
+  - r-ggfortify
+  - r-randomforest
+  - r-patchwork
   - r-logger
   - r-matrixstats
   - r-r.utils
@@ -57,6 +60,11 @@ dependencies:
   # ArchR Harmony
   - r-harmony
   - r-ggpubr
+  # MAGIC Imputation Dependencies
+  - python=3.10
+  - magic-impute
+  - r-reticulate
+  - r-rmagic
 # Still install manually in R after the env is created:
 #   BiocManager::install("AnnotationHubData")
 #   BiocManager::install("MOFA2")
