@@ -494,9 +494,13 @@ if (!uncorrected.in.stability) {
   stability.reps <- grep("_uncorrected$", stability.reps, value = TRUE, invert = TRUE)
 }
 
-n_pcs <- vapply(stability.reps, function(nm) select_pcs(pca_list[[nm]], nm), integer(1))
+# The Random Forest runs on an uncentred PCA; the plots keep the centred pca_list
+rf_pca_list <- lapply(mats[stability.reps], function(m) prcomp(t(m), center = FALSE, scale. = pca.scale))
+names(rf_pca_list) <- stability.reps
 
-pcs <- lapply(stability.reps, function(nm) get_pc_matrix(pca_list[[nm]], n_pcs[[nm]]))
+n_pcs <- vapply(stability.reps, function(nm) select_pcs(rf_pca_list[[nm]], nm), integer(1))
+
+pcs <- lapply(stability.reps, function(nm) get_pc_matrix(rf_pca_list[[nm]], n_pcs[[nm]]))
 names(pcs) <- stability.reps
 
 # Cache the forests; recompute if missing, forced, or the importance format is stale
