@@ -203,7 +203,7 @@ get_pc_matrix <- function(pca_obj, n_pcs) {
 # Variance explained by the first PCs, on a centred PCA so PC1 is not just
 # the mean methylation level that dominates the uncentred classifier PCA
 build_scree <- function(mat, title, n.pc = 10) {
-  pca <- prcomp(t(clean_matrix(mat, "scree")), center = TRUE, scale. = FALSE)
+  pca <- prcomp(t(clean_matrix(mat, "scree")), center = pca.center, scale. = FALSE)
   pct <- 100 * pca$sdev^2 / sum(pca$sdev^2)
   k <- min(n.pc, length(pct))
   df <- data.frame(pc = factor(seq_len(k)), variance = pct[seq_len(k)])
@@ -283,7 +283,7 @@ build_importance <- function(imp_df, title, top = importance.top) {
 build_pca_panel <- function(mat, groups, title) {
   present <- intersect(cell_type_levels, unique(groups))
   df <- data.frame(groups = factor(groups, levels = present))
-  pca <- prcomp(t(clean_matrix(mat, "pca")), center = TRUE, scale. = FALSE)
+  pca <- prcomp(t(clean_matrix(mat, "pca")), center = pca.center, scale. = FALSE)
   autoplot(pca, data = df, colour = "groups", size = 1.4) +
     scale_color_manual(values = cell_type_colors[present], name = "Cell type") +
     labs(title = title) +
