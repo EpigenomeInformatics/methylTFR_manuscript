@@ -28,7 +28,7 @@ suppressPackageStartupMessages({
 })
 set.seed(13)
 
-src.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/src"
+src.dir <- "/icbb_triton/scratch/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/src"
 source(file.path(src.dir, "utils.R"))
 source(file.path(src.dir, "lola_utils.R"))
 
@@ -118,21 +118,21 @@ lola.label.motifs <- c(
 # both assays is labelled by default; lower it to Inf-free numbers if the
 # top band is still too crowded to read.
 label.n <- c(
-  "Differential in both" = Inf,
-  "mTFR differential" = 10,
-  "LOLA differential" = 10,
+  "Differential in both" = 15,
+  "mTFR differential" = 15,
+  "LOLA differential" = 15,
   "Not differential" = 0
 )
 
 # Point label size on the LOLA against methylTFR panel
-label.size <- 4
+label.size <- 5.5
 
 # The correlation printed on that panel. Over every motif the two assays
 # share, most of which are differential in neither, the number mostly
 # measures the noise cloud. Restricting it to the motifs at least one assay
 # calls differential asks the question the panel is actually about, and
 # applies the same rule to both contrasts.
-cor.on.differential <- TRUE
+cor.on.differential <- FALSE
 
 # Differential status colours of that panel
 status_colors <- c(
@@ -169,7 +169,7 @@ lola.comparison <- c(EM = NA, CM = NA)
 # Region type inside each comparison. 01 registers tiling1kb and distal, so
 # the "tiling" of the older runs no longer exists. The first name in this
 # vector that is actually present wins.
-lola.region <- c("tiling1kb", "distal", "tiling", "sites")
+lola.region <- c("distal", "tiling1kb", "tiling", "sites")
 lola.userSets <- c("rankCut_1000_hyper", "rankCut_1000_hypo")
 
 # Region types used for the RnBeads density scatter and MA plots
@@ -192,7 +192,7 @@ diffmeth.auto.rank.cut <- TRUE
 diffmeth.rank.cut <- 1000
 
 # Directories
-analysis.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/memoryTcells"
+analysis.dir <- "/icbb_triton/scratch/igunduz/methylTFR_manuscript/memoryTcells"
 dev.tag <- "mTFR_devs_230826"
 dev.file <- file.path(analysis.dir, dev.tag, paste0(motifSet, "_deviations.RDS"))
 diffmeth.dir <- file.path(
@@ -207,7 +207,7 @@ meth.dir <- "/icbb/projects/share/datasets/memoryTcells"
 
 # Figures live in the repository, next to the tables they belong with.
 # Only the footprints stay under analysis.dir, they are too many for git.
-github.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript"
+github.dir <- "/icbb_triton/scratch/igunduz/methylTFR_manuscript/github/methylTFR_manuscript"
 plot.dir <- file.path(github.dir, "figures", "memtcells", "diff_TFs_230826")
 if (!dir.exists(plot.dir)) dir.create(plot.dir, recursive = TRUE)
 
@@ -369,10 +369,10 @@ for (nm in names(comparisons)) {
     row.names = FALSE
   )
 
-  # Mean Z-score difference, reference minus test
+  # Mean Z-score difference, test minus reference (memory positive)
   z <- zscores_all[, idx, drop = FALSE]
-  zdiff <- rowMeans(z[, groups == ref, drop = FALSE]) -
-    rowMeans(z[, groups == test, drop = FALSE])
+  zdiff <- rowMeans(z[, groups == test, drop = FALSE]) -
+    rowMeans(z[, groups == ref, drop = FALSE])
 
   diff$zdiff <- zdiff[diff$motifs]
   diff <- diff[order(diff$p_value_adjusted, -diff$mean_difference), ]
@@ -758,6 +758,7 @@ if (!file.exists(lola.file)) {
     } else {
       df
     }
+    # Correlation on the signed (-1 multiplied) log2OR against zdiff
     cor_val <- if (nrow(cor_set) < 3) {
       NA_real_
     } else {

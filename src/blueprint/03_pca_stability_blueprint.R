@@ -42,7 +42,7 @@ pca.scale <- FALSE
 
 # Number of PCs kept for the Random Forest, fixed rather than variance based
 pc.selection <- "fixed" # "fixed" or "variance"
-n.pc <- 10 # Components kept when pc.selection is "fixed"
+n.pc <- 20 # Components kept when pc.selection is "fixed"
 var.threshold <- 0.9 # Cumulative variance when pc.selection is "variance"
 max.pc <- 10 # Cap for the number of PCs
 

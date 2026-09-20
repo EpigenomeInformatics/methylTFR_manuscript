@@ -82,7 +82,7 @@ distal.file <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFRAnnot
 cache.dir <- file.path(analysis.dir, "chip_signal")
 if (!dir.exists(cache.dir)) dir.create(cache.dir, recursive = TRUE)
 
-github.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/"
+github.dir <- "/icbb_triton/scratch/igunduz/methylTFR_manuscript/github/methylTFR_manuscript/"
 annot.file <- file.path(github.dir, "tables", "annotated_wgbs_with_rna_chip_matches.csv")
 integration.file <- file.path(github.dir, "tables", "mixed", "bp_mtfr_viper_integration.csv")
 mixed.dir <- file.path(github.dir, "tables", "mixed")
