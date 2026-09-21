@@ -34,33 +34,37 @@ motifSet <- "jaspar2020_distal"
 region.type <- "distal"
 
 # Repository and shared helper functions
-github.dir <- "/icbb_triton/scratch/igunduz/methylTFR_manuscript/github/methylTFR_manuscript"
+github.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFR_manuscript"
 table.dir <- file.path(github.dir, "tables")
 src.dir <- file.path(github.dir, "src")
 source(file.path(src.dir, "lola_utils.R"))
 
 # Blueprint immune cells: deviations and the VIPER MOFA model
-bp.dir <- "/icbb_triton/scratch/igunduz/methylTFR_manuscript/blueprint"
+bp.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/blueprint"
 bp.dev.file <- file.path(bp.dir, "mTFR_devs_230826", paste0(motifSet, "_deviations.RDS"))
 bp.viper.model <- file.path(bp.dir, "mofa_230826", "mtfr_viper_model_bp.rds")
 
 # Memory T cells: RnBeads differential methylation and LOLA enrichment
-mt.dir <- "/icbb_triton/scratch/igunduz/methylTFR_manuscript/memoryTcells"
+mt.dir <- "/scratch/icbb/igunduz/methylTFR_manuscript/memoryTcells"
 mt.rnb.set.path <- file.path(mt.dir, "reports", "data_import_data", "rnb.set_preprocessed")
 mt.diffmeth.dir <- file.path(mt.dir, "reports", "differential_methylation_data", "differential_rnbDiffMeth")
 mt.lola.file <- file.path(mt.diffmeth.dir, "TF_motifs_lola.rds")
 
 # Distal region set the RnBeads run was built against, re-registered below so
 # annotation() can return the coordinates of this custom region type
-distal.file <- "/icbb_triton/scratch/igunduz/methylTFR_manuscript/github/methylTFRAnnotationHg38_old/inst/extdata/distal_regions.RDS"
+distal.file <- "/scratch/icbb/igunduz/methylTFR_manuscript/github/methylTFRAnnotationHg38_old/inst/extdata/distal_regions.RDS"
 
 # ECHO single-cell MOFA weights, already exported by src/echo/01_mofa_integration.R
-echo.weights.file <- "/icbb_triton/scratch/igunduz/methylTFR_manuscript/echo/mofa_230826/MOFA_weights_long.csv"
+echo.weights.file <- "/scratch/icbb/igunduz/methylTFR_manuscript/echo/mofa_230826/MOFA_weights_long.csv"
 
 # Exported tables read as-is
 diff.em.file <- file.path(table.dir, paste0("diff_em_", motifSet, ".csv"))
 diff.cm.file <- file.path(table.dir, paste0("diff_cm_", motifSet, ".csv"))
 integ.file <- file.path(table.dir, "mixed", "bp_mtfr_viper_integration.csv")
+
+# Motif variability used to restrict S1 to the significantly variable motifs
+var.file <- file.path(table.dir, paste0("variability_", motifSet, "_blueprint.csv"))
+var.padj <- 0.05
 
 # Output workbook
 out.file <- file.path(table.dir, "supplementary_tables.xlsx")
@@ -69,9 +73,12 @@ out.file <- file.path(table.dir, "supplementary_tables.xlsx")
 # S1  methylTFR deviation Z-scores of human immune cells
 #####################################################################
 
-log_info("S1: methylTFR deviation Z-scores (Blueprint immune cells)")
+log_info("S1: methylTFR deviation Z-scores of variable motifs (Blueprint immune cells)")
 dev.bp <- readRDS(bp.dev.file)
 z.bp <- deviationZScores(dev.bp)
+# Restrict to the significantly variable motifs
+var.motifs <- fread(var.file)[p_value_adjusted < var.padj, motifs]
+z.bp <- z.bp[rownames(z.bp) %in% var.motifs, , drop = FALSE]
 S1 <- data.frame(motif = rownames(z.bp), z.bp, check.names = FALSE, row.names = NULL)
 
 #####################################################################
