@@ -65,6 +65,9 @@ importance.top <- 20
 # Cell types left out of the confusion matrices
 confusion.drop <- character(0)
 
+# Validation scheme shown in the main accuracy bar plot
+accuracy.source <- "cv" # "cv" (5 fold) or "splits" (stratified hold out)
+
 # Directories
 analysis.dir <- "/icbb_triton/scratch/igunduz/methylTFR_manuscript/blueprint/"
 rnb.tag <- "RnBeads_230826"
@@ -619,8 +622,14 @@ ggsave(rf.figure.file, combined, width = 14, height = 20, bg = "white")
 log_info("Wrote ", rf.figure.file)
 
 # RF classification accuracy, saved on its own for the main figure
-p_acc <- build_accuracy(results_splits, "RF classification accuracy")
-acc.figure.file <- file.path(fig.dir, paste0("rf_accuracy_", pc.tag, ".pdf"))
+acc.res <- if (accuracy.source == "cv") results_cv else results_splits
+acc.label <- if (accuracy.source == "cv") {
+  paste0("RF classification accuracy (", rf.folds, " fold CV)")
+} else {
+  paste0("RF classification accuracy (", rf.repeats, " stratified splits)")
+}
+p_acc <- build_accuracy(acc.res, acc.label)
+acc.figure.file <- file.path(fig.dir, paste0("rf_accuracy_", accuracy.source, "_", pc.tag, ".pdf"))
 ggsave(acc.figure.file, p_acc, width = 6, height = 4, bg = "white")
 log_info("Wrote ", acc.figure.file)
 
