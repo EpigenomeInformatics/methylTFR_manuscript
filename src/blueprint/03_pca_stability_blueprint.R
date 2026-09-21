@@ -16,6 +16,7 @@ suppressPackageStartupMessages({
   library(logger)
   library(randomForest)
   library(patchwork)
+  library(matrixStats)
   library(RnBeads)
   library(methylTFR)
 })
@@ -39,6 +40,9 @@ uncorrected.in.stability <- FALSE
 # PCA is centred so the PCs capture between-sample structure, not the mean level
 pca.center <- TRUE
 pca.scale <- FALSE
+
+# The Random Forest is trained on an uncentred PCA, the plots keep the centred one
+rf.pca.center <- FALSE
 
 # Number of PCs kept for the Random Forest, fixed rather than variance based
 pc.selection <- "fixed" # "fixed" or "variance"
@@ -131,14 +135,26 @@ cell_type_levels <- names(cell_type_colors)
 # Helper functions
 #####################################################################
 
-# Drop features with non finite values, prcomp cannot handle them
+# Drop features prcomp cannot handle, non finite values and constant rows
 clean_matrix <- function(mat, label) {
   mat <- as.matrix(mat)
   keep <- is.finite(rowSums(mat))
   if (any(!keep)) {
     log_info(label, ": dropping ", sum(!keep), " features with non finite values")
   }
-  mat[keep, , drop = FALSE]
+  mat <- mat[keep, , drop = FALSE]
+
+  # Constant features only break a scaled prcomp; on an uncentred PCA they
+  # carry part of the mean profile, so they are kept unless pca.scale is TRUE
+  if (pca.scale) {
+    vars <- matrixStats::rowVars(mat)
+    keep_var <- is.finite(vars) & vars > 0
+    if (any(!keep_var)) {
+      log_info(label, ": dropping ", sum(!keep_var), " constant features")
+    }
+    mat <- mat[keep_var, , drop = FALSE]
+  }
+  mat
 }
 
 # PCA on samples, matrices are features x samples
@@ -494,8 +510,11 @@ if (!uncorrected.in.stability) {
   stability.reps <- grep("_uncorrected$", stability.reps, value = TRUE, invert = TRUE)
 }
 
-# The Random Forest runs on an uncentred PCA; the plots keep the centred pca_list
-rf_pca_list <- lapply(mats[stability.reps], function(m) prcomp(t(m), center = FALSE, scale. = pca.scale))
+# The Random Forest runs on the uncentred PCA; the plots keep the centred pca_list
+rf_pca_list <- lapply(mats[stability.reps], function(m) {
+  log_info("RF PCA on ", nrow(m), " features x ", ncol(m), " samples (center = ", rf.pca.center, ")")
+  prcomp(t(m), center = rf.pca.center, scale. = pca.scale)
+})
 names(rf_pca_list) <- stability.reps
 
 n_pcs <- vapply(stability.reps, function(nm) select_pcs(rf_pca_list[[nm]], nm), integer(1))
