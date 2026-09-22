@@ -16,6 +16,7 @@ suppressPackageStartupMessages({
   library(logger)
   library(randomForest)
   library(patchwork)
+  library(matrixStats)
   library(RnBeads)
   library(methylTFR)
 })
@@ -40,6 +41,9 @@ uncorrected.in.stability <- FALSE
 pca.center <- TRUE
 pca.scale <- FALSE
 
+# The Random Forest is trained on an uncentred PCA, the plots keep the centred one
+rf.pca.center <- FALSE
+
 # Number of PCs kept for the Random Forest, fixed rather than variance based
 pc.selection <- "fixed" # "fixed" or "variance"
 n.pc <- 20 # Components kept when pc.selection is "fixed"
@@ -60,6 +64,9 @@ importance.rep <- "mTFR_jaspar2020_distal"
 importance.top <- 20
 # Cell types left out of the confusion matrices
 confusion.drop <- character(0)
+
+# Validation scheme shown in the main accuracy bar plot
+accuracy.source <- "cv" # "cv" (5 fold) or "splits" (stratified hold out)
 
 # Directories
 analysis.dir <- "/icbb_triton/scratch/igunduz/methylTFR_manuscript/blueprint/"
@@ -131,14 +138,26 @@ cell_type_levels <- names(cell_type_colors)
 # Helper functions
 #####################################################################
 
-# Drop features with non finite values, prcomp cannot handle them
+# Drop features prcomp cannot handle, non finite values and constant rows
 clean_matrix <- function(mat, label) {
   mat <- as.matrix(mat)
   keep <- is.finite(rowSums(mat))
   if (any(!keep)) {
     log_info(label, ": dropping ", sum(!keep), " features with non finite values")
   }
-  mat[keep, , drop = FALSE]
+  mat <- mat[keep, , drop = FALSE]
+
+  # Constant features only break a scaled prcomp; on an uncentred PCA they
+  # carry part of the mean profile, so they are kept unless pca.scale is TRUE
+  if (pca.scale) {
+    vars <- matrixStats::rowVars(mat)
+    keep_var <- is.finite(vars) & vars > 0
+    if (any(!keep_var)) {
+      log_info(label, ": dropping ", sum(!keep_var), " constant features")
+    }
+    mat <- mat[keep_var, , drop = FALSE]
+  }
+  mat
 }
 
 # PCA on samples, matrices are features x samples
@@ -494,9 +513,16 @@ if (!uncorrected.in.stability) {
   stability.reps <- grep("_uncorrected$", stability.reps, value = TRUE, invert = TRUE)
 }
 
-n_pcs <- vapply(stability.reps, function(nm) select_pcs(pca_list[[nm]], nm), integer(1))
+# The Random Forest runs on the uncentred PCA; the plots keep the centred pca_list
+rf_pca_list <- lapply(mats[stability.reps], function(m) {
+  log_info("RF PCA on ", nrow(m), " features x ", ncol(m), " samples (center = ", rf.pca.center, ")")
+  prcomp(t(m), center = rf.pca.center, scale. = pca.scale)
+})
+names(rf_pca_list) <- stability.reps
 
-pcs <- lapply(stability.reps, function(nm) get_pc_matrix(pca_list[[nm]], n_pcs[[nm]]))
+n_pcs <- vapply(stability.reps, function(nm) select_pcs(rf_pca_list[[nm]], nm), integer(1))
+
+pcs <- lapply(stability.reps, function(nm) get_pc_matrix(rf_pca_list[[nm]], n_pcs[[nm]]))
 names(pcs) <- stability.reps
 
 # Cache the forests; recompute if missing, forced, or the importance format is stale
@@ -596,8 +622,14 @@ ggsave(rf.figure.file, combined, width = 14, height = 20, bg = "white")
 log_info("Wrote ", rf.figure.file)
 
 # RF classification accuracy, saved on its own for the main figure
-p_acc <- build_accuracy(results_splits, "RF classification accuracy")
-acc.figure.file <- file.path(fig.dir, paste0("rf_accuracy_", pc.tag, ".pdf"))
+acc.res <- if (accuracy.source == "cv") results_cv else results_splits
+acc.label <- if (accuracy.source == "cv") {
+  paste0("RF classification accuracy (", rf.folds, " fold CV)")
+} else {
+  paste0("RF classification accuracy (", rf.repeats, " stratified splits)")
+}
+p_acc <- build_accuracy(acc.res, acc.label)
+acc.figure.file <- file.path(fig.dir, paste0("rf_accuracy_", accuracy.source, "_", pc.tag, ".pdf"))
 ggsave(acc.figure.file, p_acc, width = 6, height = 4, bg = "white")
 log_info("Wrote ", acc.figure.file)
 
