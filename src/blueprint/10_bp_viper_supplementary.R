@@ -26,7 +26,7 @@ set.seed(42)
 # distal set avoids CpG islands, the genome-wide set keeps them (harder test)
 motif.sets <- c(
   "jaspar2020_distal" = "JASPAR2020 distal",
-  "jaspar2020" = "JASPAR2020 all regions"
+  "jaspar2020" = "JASPAR2020 genome-wide"
 )
 motifSet.main <- "jaspar2020_distal"
 
@@ -50,6 +50,11 @@ group_colors <- c(
   "All motifs" = "#6A3D9A",
   "TF not expressed" = "#C2703D",
   "TF expressed" = "#2CA02C"
+)
+group_labels <- c(
+  "All motifs" = "All motifs",
+  "TF not expressed" = "TF not expressed\n(lowest expression quartile)",
+  "TF expressed" = "TF expressed\n(highest expression quartile)"
 )
 source_colors <- c("TF mRNA" = "#B5A38A", "VIPER activity" = "#6BC75A")
 set_colors <- c("Integration motifs" = "#C2377C", "Background motifs" = "#B5A38A")
@@ -224,12 +229,12 @@ write.csv(summary_tab, file.path(mixed.dir, "bp_bias_correction_summary.csv"), r
 # A) Association with the expectation, before and after the correction
 #####################################################################
 
+# signed r: the genome-wide set runs the other way, and |r| would hide that
 dumbbell <- summary_tab[, .(set, group,
-  Uncorrected = abs(r_uncorrected), Corrected = abs(r_corrected)
+  Uncorrected = r_uncorrected, Corrected = r_corrected
 )]
-dumbbell[, row := factor(paste(set, group, sep = "\n"),
-  levels = rev(unique(paste(set, group, sep = "\n")))
-)]
+dumbbell[, row := paste(set, sub("\n.*$", "", group_labels[as.character(group)]), sep = "\n")]
+dumbbell[, row := factor(row, levels = rev(unique(row)))]
 dumbbell_long <- melt(dumbbell,
   id.vars = "row", measure.vars = c("Uncorrected", "Corrected"),
   variable.name = "state", value.name = "abs_r"
@@ -237,6 +242,7 @@ dumbbell_long <- melt(dumbbell,
 dumbbell_long[, state := factor(state, levels = names(state_colors))]
 
 p_a <- ggplot(dumbbell, aes(y = row)) +
+  geom_vline(xintercept = 0, linetype = "dotted", colour = "grey60") +
   geom_segment(aes(x = Uncorrected, xend = Corrected, yend = row),
     colour = "grey60", linewidth = 0.5,
     arrow = arrow(length = unit(1.8, "mm"), type = "closed")
@@ -248,7 +254,7 @@ p_a <- ggplot(dumbbell, aes(y = row)) +
   scale_colour_manual(values = state_colors, name = NULL) +
   scale_x_continuous(expand = expansion(mult = c(0.05, 0.35))) +
   labs(
-    x = "|Pearson r| between the deviation score and the expected one\n(lower is less composition dependence)",
+    x = "Pearson r between the deviation score and the expected one",
     y = NULL
   ) +
   base_theme +
@@ -289,11 +295,11 @@ p_b <- ggplot(binned, aes(x = x, y = y, colour = group, linetype = state)) +
   geom_line(linewidth = 0.6) +
   geom_point(size = 1.1, show.legend = FALSE) +
   facet_wrap(~set, scales = "free", nrow = 1) +
-  scale_colour_manual(values = group_colors, name = NULL) +
+  scale_colour_manual(values = group_colors, labels = group_labels, name = NULL) +
   scale_linetype_manual(values = state_lines, name = NULL) +
   labs(
     x = "Expected deviation score, decile bin mean",
-    y = "Deviation score, bin mean +/- s.e.\n(centred on its own mean, flat = no composition dependence)"
+    y = "Deviation score, bin mean +/- s.e.\n(centred on its own mean)"
   ) +
   base_theme +
   theme(legend.position = "bottom", legend.box = "horizontal")
@@ -423,7 +429,7 @@ p_d <- ggplot(cor_long, aes(x = source, y = abs_cor, fill = source)) +
   scale_fill_manual(values = source_colors) +
   labs(
     x = sprintf("n = %d motifs", nrow(pairs_tab)),
-    y = "|Pearson r| with the methylTFR\ndeviation Z-scores, over samples"
+    y = "Absolute Pearson r with the methylTFR\ndeviation Z-scores, over samples"
   ) +
   base_theme +
   theme(legend.position = "none")
@@ -541,7 +547,7 @@ if (!file.exists(prof.file)) {
     scale_x_continuous(breaks = c(-2000, 0, 2000),
                        labels = c("-2 kb", "motif", "+2 kb")) +
     labs(
-      x = "distance from the motif centre", y = "H3K27ac fold change",
+      x = "distance from the motif centre", y = "H3K27ac fold enrichment",
       colour = NULL, linetype = NULL
     ) +
     base_theme +
@@ -592,6 +598,24 @@ if (!file.exists(chip.A)) {
     sum(is.finite(chipA$specificity)), " stronger where the factor is bound"
   )
 
+  # one point per ChIP dataset, so the AP-1 motif variants of one peak set count once
+  per_set <- chipA[, .(
+    factor = factor[1], methylome = methylome[1], primary = primary[1],
+    n_motifs = .N,
+    delta = median(delta, na.rm = TRUE),
+    delta_control = median(delta_control, na.rm = TRUE)
+  ), by = set_id]
+  per_set[, specificity := delta_control - delta]
+  n_pos <- sum(per_set$specificity > 0, na.rm = TRUE)
+  n_set <- sum(is.finite(per_set$specificity))
+  per_set_p <- binom.test(n_pos, n_set, 0.5)$p.value
+  fwrite(per_set, file.path(chip.dir, "A_site_level_per_dataset.csv"))
+  log_info(
+    "Per ChIP dataset: median ", round(median(per_set$delta), 3), " against its own methylome, ",
+    round(median(per_set$delta_control), 3), " against another lineage; ",
+    n_pos, " of ", n_set, " stronger where bound, sign test p = ", signif(per_set_p, 2)
+  )
+
   # G) coverage at motif level: a dot per motif x cell type where ChIP data exists
   ct.order <- c("Monocytes", "T-cells", "B-cells", "GM12878\n(cell line)")
   cov.ct <- c(monocyte = "Monocytes", Tcell = "T-cells", Bcell = "B-cells",
@@ -637,12 +661,15 @@ if (!file.exists(chip.A)) {
   # H) the two deltas against each other, diagonal = no cell type specificity
   lim <- range(c(chipA$delta, chipA$delta_control), na.rm = TRUE)
   spec_lab <- chipA[primary == TRUE | specificity <= 0]
+  # SPI1 is tested in two primary cell types, so primary labels carry the cell type
+  spec_lab[, label := fifelse(primary,
+    paste0(motif, " (", sub("\n.*$", "", as.character(ct)), ")"), motif)]
 
   p_spec <- ggplot(chipA, aes(x = delta_control, y = delta)) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed",
                 linewidth = 0.3, colour = "grey60") +
     geom_point(aes(shape = primary), size = 2, colour = ink.mark) +
-    geom_text_repel(data = spec_lab, aes(label = motif), size = 2.4,
+    geom_text_repel(data = spec_lab, aes(label = label), size = 2.4,
                     colour = ink.muted, min.segment.length = 0,
                     segment.size = 0.2, box.padding = 0.3, max.overlaps = Inf) +
     scale_shape_manual(values = c(`TRUE` = 16, `FALSE` = 1),
@@ -690,7 +717,7 @@ if (!file.exists(chip.A)) {
                                    "other lineage" = col.control),
                         guide = "none") +
     labs(
-      x = NULL, y = "ChIP supported minus\nCpG/GC matched unsupported sites"
+      x = NULL, y = "Deviation score difference, ChIP supported\nminus CpG/GC matched unsupported sites"
     ) +
     base_theme +
     theme(plot.title = element_text(hjust = 0, face = "plain", size = base.size))
