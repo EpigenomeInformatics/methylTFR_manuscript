@@ -147,9 +147,10 @@ cell_type_colors <- CELL_TYPE_COLORS
 
 # Diverging ramps of the paired heatmap, capped at +/- 2
 zscore.limit <- 2
+# same methylTFR ramp as the BLUEPRINT (08) and ECHO (04) heatmaps
 mtfr_colors <- colorRamp2(
   c(-2, -1, 0, 1, 2),
-  c("#2A2F9E", "#7570B3", "#FFFFFF", "#F16C43", "#E03426")
+  c("#2B4B9B", "#4EC3E0", "#FFF200", "#F5A623", "#B21212")
 )
 viper_colors <- colorRamp2(
   c(-2, -1, 0, 1, 2),
